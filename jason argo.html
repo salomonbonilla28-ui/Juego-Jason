@@ -1,0 +1,2929 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Puerto Griego Antiguo 3D - Explorador Interactivo</title>
+    <!-- Three.js Principal -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Controles de Órbita de Three.js -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Cargador de archivos GLTF/GLB -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- Cargador FBX (Mixamo) -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/libs/fflate.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #050b14;
+            color: #f1f5f9;
+        }
+        canvas { display: block; }
+
+        #canvas-container {
+            position: absolute; inset: 0; z-index: 0;
+            width: 100%; height: 100vh;
+        }
+
+        /* Loader */
+        #loader {
+            position: absolute; inset: 0; z-index: 50;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: #020617;
+            transition: opacity 0.7s;
+            pointer-events: none;
+        }
+        .loader-ring {
+            position: relative; width: 96px; height: 96px; margin-bottom: 24px;
+        }
+        .loader-ring-bg {
+            position: absolute; inset: 0;
+            border: 4px solid rgba(245,158,11,0.2);
+            border-radius: 50%;
+        }
+        .loader-ring-spin {
+            position: absolute; inset: 0;
+            border: 4px solid transparent;
+            border-top-color: #f59e0b;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #loader h1 {
+            font-size: 1.5rem; font-weight: 700; letter-spacing: 0.15em;
+            text-transform: uppercase; color: #fef3c7; margin-bottom: 8px;
+        }
+        #loader p {
+            color: #94a3b8; font-size: 0.875rem;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+        /* UI overlay */
+        #ui-overlay {
+            position: absolute; inset: 0; z-index: 10;
+            pointer-events: none;
+            display: flex; flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+        }
+
+        /* Glass card */
+        .glass {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+        }
+        .active-ring {
+            box-shadow: 0 0 15px rgba(245,158,11,0.6);
+            border-color: rgba(245,158,11,0.8);
+        }
+
+        /* Header */
+        #ui-header {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        /* Ciclo de luz panel */
+        #time-panel {
+            pointer-events: auto;
+            display: flex; align-items: center; gap: 16px;
+            padding: 10px 16px;
+        }
+        #time-label-group { text-align: right; }
+        #time-label-group .label-top {
+            font-size: 0.7rem; color: #94a3b8;
+        }
+        #time-display {
+            font-size: 0.875rem; font-weight: 600; color: #fcd34d;
+        }
+        #time-buttons {
+            display: flex; gap: 2px;
+            background: rgba(15,23,42,0.6);
+            border: 1px solid rgba(51,65,85,0.5);
+            border-radius: 12px;
+            padding: 4px;
+        }
+        #time-buttons button {
+            padding: 8px;
+            border: none; background: transparent; cursor: pointer;
+            border-radius: 8px;
+            color: #94a3b8;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.2s, color 0.2s;
+        }
+        #time-buttons button:hover {
+            background: rgba(245,158,11,0.2);
+            color: #fcd34d;
+        }
+        #time-buttons button.active {
+            background: rgba(245,158,11,0.3);
+            color: #fcd34d;
+        }
+        #time-buttons button svg {
+            width: 16px; height: 16px;
+            stroke: currentColor; fill: none;
+            stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+        }
+        /* Panel lateral HUD */
+        #hud-panel {
+            position: absolute;
+            top: 50%;
+            right: 20px;
+            transform: translateY(-50%);
+            z-index: 20;
+            width: 220px;
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+        #hud-panel.visible { display: flex; }
+        .hud-card {
+            background: rgba(10, 15, 30, 0.88);
+            border-radius: 14px;
+            padding: 14px 16px;
+            border: 1px solid rgba(255,255,255,0.12);
+            backdrop-filter: blur(10px);
+        }
+        .hud-name {
+            font-size: 1rem; font-weight: 800;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        .hud-bar-label {
+            font-size: 0.65rem; color: #94a3b8;
+            text-transform: uppercase; letter-spacing: 0.1em;
+            margin-bottom: 3px;
+        }
+        .hud-bar-track {
+            width: 100%; height: 12px;
+            background: #1e293b; border-radius: 6px;
+            overflow: hidden; margin-bottom: 4px;
+        }
+        .hud-bar-fill { height: 100%; border-radius: 6px; transition: width 0.4s ease; }
+        .hud-bar-fill.hp { background: linear-gradient(90deg,#e02020,#f06060); }
+        .hud-bar-fill.energy { background: linear-gradient(90deg,#2060d0,#60a0f0); }
+        .hud-bar-val { font-size: 0.7rem; color: #cbd5e1; text-align: right; margin-bottom: 8px; }
+        .hud-role {
+            font-size: 0.65rem; color: #64748b;
+            text-transform: uppercase; letter-spacing: 0.12em;
+            border-top: 1px solid rgba(255,255,255,0.07);
+            padding-top: 8px; margin-top: 4px;
+        }
+
+        /* ===== PANEL DE ACCIÓN INFERIOR ===== */
+        #action-panel {
+            position: fixed;
+            bottom: 0; left: 50%; transform: translateX(-50%);
+            z-index: 40;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            padding-bottom: 20px;
+            pointer-events: none;
+        }
+        #action-panel.visible { display: flex; }
+
+        /* Sub-panel (habilidades / items) que aparece encima de los botones */
+        #action-submenu {
+            background: rgba(8, 14, 28, 0.92);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 18px;
+            backdrop-filter: blur(16px);
+            padding: 16px 20px;
+            min-width: 340px;
+            max-width: 520px;
+            pointer-events: auto;
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: 0 0 40px rgba(0,0,0,0.6);
+        }
+        #action-submenu.visible { display: flex; }
+        #submenu-title {
+            font-size: 0.65rem; font-weight: 700; letter-spacing: 0.15em;
+            text-transform: uppercase; color: #64748b;
+            margin-bottom: 2px;
+        }
+
+        /* Grid de habilidades */
+        .skills-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+        .skill-btn {
+            display: flex; flex-direction: column; align-items: center;
+            gap: 6px; padding: 10px 6px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 14px;
+            cursor: pointer;
+            transition: all 0.18s;
+            pointer-events: auto;
+            position: relative;
+        }
+        .skill-btn:hover { background: rgba(255,255,255,0.09); transform: translateY(-2px); }
+        .skill-btn.supreme { border-color: rgba(251,191,36,0.5); }
+        .skill-btn.supreme:hover { box-shadow: 0 0 14px rgba(251,191,36,0.4); }
+        .skill-btn.no-energy { opacity: 0.45; cursor: not-allowed; }
+        .skill-icon {
+            width: 44px; height: 44px; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.4rem;
+        }
+        .skill-name {
+            font-size: 0.58rem; font-weight: 700; color: #e2e8f0;
+            text-align: center; line-height: 1.2;
+            text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .skill-cost {
+            font-size: 0.55rem; color: #60a0f0;
+            font-weight: 600;
+        }
+        .skill-cost.free { color: #4ade80; }
+        .skill-type-badge {
+            font-size: 0.48rem; color: #94a3b8;
+            text-transform: uppercase; letter-spacing: 0.06em;
+        }
+        /* Tooltip de habilidad */
+        .skill-tooltip {
+            position: absolute; bottom: calc(100% + 8px); left: 50%;
+            transform: translateX(-50%);
+            background: rgba(5, 10, 22, 0.97);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 10px; padding: 10px 12px;
+            width: 190px; font-size: 0.65rem; color: #cbd5e1;
+            line-height: 1.5; pointer-events: none;
+            opacity: 0; transition: opacity 0.15s;
+            z-index: 99; text-align: left;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        }
+        .skill-btn:hover .skill-tooltip { opacity: 1; }
+        .skill-tooltip b { color: #fcd34d; display: block; margin-bottom: 4px; font-size: 0.68rem; }
+
+        /* Items vacíos */
+        .items-empty {
+            text-align: center; color: #334155;
+            font-size: 0.75rem; padding: 20px 0;
+            letter-spacing: 0.08em;
+        }
+
+        /* Botones principales (Habilidades / Defenderse / Item) */
+        #action-main-btns {
+            display: flex; gap: 10px;
+            pointer-events: auto;
+        }
+        .act-btn {
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
+            padding: 10px 22px;
+            border-radius: 50px;
+            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(10, 18, 36, 0.85);
+            backdrop-filter: blur(12px);
+            cursor: pointer;
+            transition: all 0.18s;
+            color: #e2e8f0;
+            font-size: 0.7rem; font-weight: 700;
+            letter-spacing: 0.1em; text-transform: uppercase;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+        .act-btn .act-icon { font-size: 1.2rem; }
+        .act-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 28px rgba(0,0,0,0.5); }
+        .act-btn.skills-btn:hover  { border-color: rgba(99,179,255,0.6); color: #93c5fd; box-shadow: 0 0 18px rgba(59,130,246,0.3); }
+        .act-btn.defend-btn:hover  { border-color: rgba(74,222,128,0.6); color: #86efac; box-shadow: 0 0 18px rgba(34,197,94,0.3); }
+        .act-btn.items-btn:hover   { border-color: rgba(251,191,36,0.6); color: #fde68a; box-shadow: 0 0 18px rgba(245,158,11,0.3); }
+        .act-btn.active            { background: rgba(255,255,255,0.08); }
+        .act-btn.skills-btn.active { border-color: rgba(99,179,255,0.7); color: #93c5fd; }
+        .act-btn.defend-btn.active { border-color: rgba(74,222,128,0.7); color: #86efac; }
+        .act-btn.items-btn.active  { border-color: rgba(251,191,36,0.7); color: #fde68a; }
+
+        /* Feedback flash de acción */
+        #action-feedback {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+            z-index: 60; pointer-events: none;
+            font-size: 1.6rem; font-weight: 900; letter-spacing: 0.08em;
+            text-transform: uppercase; text-align: center;
+            opacity: 0; transition: opacity 0.2s;
+            text-shadow: 0 0 30px currentColor;
+        }
+        #action-feedback.show { opacity: 1; }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <!-- Feedback flash -->
+    <div id="action-feedback"></div>
+
+    <!-- Panel de acción inferior -->
+    <div id="action-panel">
+        <!-- Submenú (habilidades / items) -->
+        <div id="action-submenu">
+            <div id="submenu-title">Habilidades</div>
+            <div id="submenu-content"></div>
+        </div>
+        <!-- Botones principales -->
+        <div id="action-main-btns">
+            <button class="act-btn skills-btn" onclick="toggleSubmenu('skills')">
+                <span class="act-icon">⚔️</span>
+                Habilidades
+            </button>
+            <button class="act-btn defend-btn" onclick="doDefend()">
+                <span class="act-icon">🛡️</span>
+                Defenderse
+            </button>
+            <button class="act-btn items-btn" onclick="toggleSubmenu('items')">
+                <span class="act-icon">🎒</span>
+                Item
+            </button>
+        </div>
+    </div>
+
+    <!-- Panel HUD lateral -->
+    <div id="hud-panel">
+        <div class="hud-card">
+            <div id="hud-name" class="hud-name" style="color:#fff">—</div>
+            <div class="hud-bar-label">❤ Vida</div>
+            <div class="hud-bar-track"><div id="hud-hp-fill" class="hud-bar-fill hp" style="width:100%"></div></div>
+            <div id="hud-hp-val" class="hud-bar-val">—</div>
+            <div id="hud-energy-block">
+            <div class="hud-bar-label">⚡ Energía</div>
+            <div class="hud-bar-track"><div id="hud-en-fill" class="hud-bar-fill energy" style="width:100%"></div></div>
+            <div id="hud-en-val" class="hud-bar-val">—</div>
+            </div>
+            <div id="hud-stats-extra" class="hud-role" style="border-top:none; padding-top:0; margin-top:2px; color:#94a3b8; font-size:0.6rem;">—</div>
+            <div id="hud-role" class="hud-role">—</div>
+        </div>
+    </div>
+
+    <!-- Pantalla de Carga -->
+    <div id="loader">
+        <div class="loader-ring">
+            <div class="loader-ring-bg"></div>
+            <div class="loader-ring-spin"></div>
+        </div>
+        <h1>Construyendo Puerto Griego</h1>
+        <p>Generando geometrías, templos, pedestales y oleaje...</p>
+    </div>
+
+    <!-- UI overlay -->
+    <div id="ui-overlay">
+        <header id="ui-header">
+            <div class="glass" id="time-panel">
+                <div id="time-label-group">
+                    <div class="label-top">Ciclo de Luz</div>
+                    <div id="time-display">Mediodía Soleado</div>
+                </div>
+                <div id="time-buttons">
+                    <button id="btn-morning" title="Amanecer">
+                        <!-- sunrise icon -->
+                        <svg viewBox="0 0 24 24"><path d="M12 2v2M4.93 4.93l1.41 1.41M2 12h2M19.07 4.93l-1.41 1.41M22 12h-2M12 6a6 6 0 0 1 6 6H6a6 6 0 0 1 6-6zM4 20h16M8 16h8"/></svg>
+                    </button>
+                    <button id="btn-noon" class="active" title="Mediodía">
+                        <!-- sun icon -->
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    </button>
+                    <button id="btn-sunset" title="Atardecer">
+                        <!-- sunset icon -->
+                        <svg viewBox="0 0 24 24"><path d="M12 10a6 6 0 0 1 6 6H6a6 6 0 0 1 6-6zM4 20h16M8 16h8M12 2v2M4.93 4.93l1.41 1.41M19.07 4.93l-1.41 1.41M2 12h2M22 12h-2"/></svg>
+                    </button>
+                    <button id="btn-night" title="Noche">
+                        <!-- moon icon -->
+                        <svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                    </button>
+                </div>
+            </div>
+        </header>
+        <main></main>
+        <footer></footer>
+    </div>
+
+    <!-- Código del Simulador 3D -->
+    <script>
+        // --- CONFIGURACIÓN Y VARIABLES GLOBALES ---
+        let scene, camera, renderer, controls;
+        let ambientLight, sunLight, pointLights = [];
+        let skyMesh, oceanMesh;
+        let shipGroup;
+        let clock = new THREE.Clock();
+        let mixerClock = new THREE.Clock(); // reloj independiente para AnimationMixer
+        
+        // Elementos interactivos del Raycaster
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        // Estructura de datos de pedestales corregida, desplazada hacia la derecha (X +8)
+        let pedestals = [
+            { id: 0, name: "Holograma 5", pos: [-5, 3.8,  -5], group: null, character: null, status: "Holograma", type: "left" },
+            { id: 1, name: "Holograma 6", pos: [-5, 3.8, -20], group: null, character: null, status: "Holograma", type: "left" },
+            { id: 2, name: "Holograma 7", pos: [-5, 3.8, -35], group: null, character: null, status: "Holograma", type: "left" },
+            { id: 3, name: "Holograma 4", pos: [10, 3.8, -20], group: null, character: null, status: "Holograma", type: "center" },
+            { id: 4, name: "Holograma 1", pos: [25, 3.8,  -5], group: null, character: null, status: "Holograma", type: "right" },
+            { id: 5, name: "Holograma 2", pos: [25, 3.8, -20], group: null, character: null, status: "Holograma", type: "right" },
+            { id: 6, name: "Holograma 3", pos: [25, 3.8, -35], group: null, character: null, status: "Holograma", type: "right" }
+        ];
+
+        // Seleccionar inicialmente el pedestal de la Derecha 1 para que la cámara enfoque allí al inicio
+        let selectedPedestalId = 4;
+
+        // Configuración de atmósfera por momento del día
+        const TIME_PRESETS = {
+            morning: {
+                name: "Amanecer Dorado",
+                skyTop: 0x221a30,
+                skyBottom: 0xffa07a,
+                sunColor: 0xff8c00,
+                sunIntensity: 0.8,
+                sunPos: [80, 20, -50],
+                ambientColor: 0x3d304a,
+                ambientIntensity: 0.5,
+                fogColor: 0xffa07a,
+                fogDensity: 0.005
+            },
+            noon: {
+                name: "Mediodía Soleado",
+                skyTop: 0x1a82e2,
+                skyBottom: 0x8ce1ff,
+                sunColor: 0xffffff,
+                sunIntensity: 1.4,
+                sunPos: [30, 120, 30],
+                ambientColor: 0xe0f7ff,
+                ambientIntensity: 0.6,
+                fogColor: 0xcceeff,
+                fogDensity: 0.001
+            },
+            sunset: {
+                name: "Atardecer Cálido",
+                skyTop: 0x2c1b4d,
+                skyBottom: 0xff4500,
+                sunColor: 0xff5500,
+                sunIntensity: 0.9,
+                sunPos: [-90, 15, -20],
+                ambientColor: 0x4a2a40,
+                ambientIntensity: 0.4,
+                fogColor: 0xff5500,
+                fogDensity: 0.004
+            },
+            night: {
+                name: "Noche de Antorchas",
+                skyTop: 0x01040a,
+                skyBottom: 0x050e1e,
+                sunColor: 0x7c94b0,
+                sunIntensity: 0.2,
+                sunPos: [-40, 60, -40],
+                ambientColor: 0x0d1b2a,
+                ambientIntensity: 0.15,
+                fogColor: 0x050e1e,
+                fogDensity: 0.008
+            }
+        };
+
+        let currentPreset = 'noon';
+
+        // Inicialización tras cargar DOM
+        window.onload = function() {
+            init3D();
+            buildScene();
+            setupControls();
+            buildPedestalsListUI();
+            
+            // Forzar la cámara y selección inicial
+            selectPedestal(4);
+            
+            animate();
+            
+            // Ocultar pantalla de carga con suavidad (siempre, independiente del modelo)
+            setTimeout(() => {
+                const loader = document.getElementById('loader');
+                if (loader) {
+                    loader.style.opacity = '0';
+                    loader.style.pointerEvents = 'none';
+                }
+            }, 1500);
+        };
+
+        // --- INICIALIZAR ENTORNO THREE.JS ---
+        function init3D() {
+            const container = document.getElementById('canvas-container');
+            
+            // Crear Escena con Niebla
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(TIME_PRESETS[currentPreset].fogColor, TIME_PRESETS[currentPreset].fogDensity);
+
+            // Cámara
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
+
+            // Renderizador con soporte de Sombras y Antialiasing
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            container.appendChild(renderer.domElement);
+
+            // Controles de Cámara (OrbitControls)
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 - 0.02; // No traspasar el suelo
+            controls.minDistance = 10;
+            controls.maxDistance = 180;
+            controls.target.set(0, 2, 0);
+
+            // Colocación de cámara inicial
+            changeCameraPreset('isometric'); 
+
+            // Luces iniciales
+            ambientLight = new THREE.AmbientLight(TIME_PRESETS[currentPreset].ambientColor, TIME_PRESETS[currentPreset].ambientIntensity);
+            scene.add(ambientLight);
+
+            sunLight = new THREE.DirectionalLight(TIME_PRESETS[currentPreset].sunColor, TIME_PRESETS[currentPreset].sunIntensity);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 300;
+            
+            const shadowDistance = 80;
+            sunLight.shadow.camera.left = -shadowDistance;
+            sunLight.shadow.camera.right = shadowDistance;
+            sunLight.shadow.camera.top = shadowDistance;
+            sunLight.shadow.camera.bottom = -shadowDistance;
+            sunLight.shadow.bias = -0.0005;
+            scene.add(sunLight);
+
+            // Luz de relleno para el personaje Jason (modelo GLB Mixamo)
+            // PointLight cálida encima del pedestal de Jason [25, 3.8, -20]
+            const jasonLight = new THREE.PointLight(0xfff5e0, 2.5, 18);
+            jasonLight.position.set(25, 9, -20);
+            scene.add(jasonLight);
+            // FillLight frontal suave (desde la cámara hacia Jason)
+            const jasonFill = new THREE.DirectionalLight(0xffffff, 0.8);
+            jasonFill.position.set(25, 7, -10);
+            jasonFill.target.position.set(25, 4, -20);
+            scene.add(jasonFill);
+            scene.add(jasonFill.target);
+
+            // Ajustar el Sol
+            updateSunPosition();
+
+            // Eventos
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('pointerdown', onDocumentPointerDown);
+        }
+
+        // --- PROCEDIMIENTOS DE CAMBIO DE TIEMPO / ILUMINACIÓN ---
+        function updateSunPosition() {
+            const preset = TIME_PRESETS[currentPreset];
+            sunLight.position.set(...preset.sunPos);
+        }
+
+        function setTimeOfDay(timeKey) {
+            currentPreset = timeKey;
+            const preset = TIME_PRESETS[timeKey];
+
+            // Actualizar textos UI
+            document.getElementById('time-display').innerText = preset.name;
+            
+            // Reiniciar botones de la interfaz
+            ['btn-morning', 'btn-noon', 'btn-sunset', 'btn-night'].forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) btn.classList.remove('active');
+            });
+            const activeBtn = document.getElementById(`btn-${timeKey}`);
+            if (activeBtn) activeBtn.classList.add('active');
+
+            // Animación suave de luces usando transiciones o reemplazo directo
+            scene.fog.color.setHex(preset.fogColor);
+            scene.fog.density = preset.fogDensity;
+            
+            ambientLight.color.setHex(preset.ambientColor);
+            ambientLight.intensity = preset.ambientIntensity;
+            
+            sunLight.color.setHex(preset.sunColor);
+            sunLight.intensity = preset.sunIntensity;
+            updateSunPosition();
+
+            // Cambiar color del cielo
+            updateSkyColor(preset.skyTop, preset.skyBottom);
+
+            // Activar/desactivar antorchas nocturnas
+            pointLights.forEach(light => {
+                light.intensity = (timeKey === 'night') ? 1.5 : (timeKey === 'sunset' || timeKey === 'morning') ? 0.8 : 0.0;
+            });
+        }
+
+        // Ajuste de Cámara manual/preset
+        function changeCameraPreset(type) {
+            if (!camera) return;
+            
+            if (type === 'muelle') {
+                camera.position.set(-35, 12, -15);
+                if (controls) controls.target.set(-30, 3, 10);
+            } else if (type === 'plaza') {
+                camera.position.set(0, 4, -5);
+                if (controls) controls.target.set(0, 10, 45);
+            } else if (type === 'templos') {
+                camera.position.set(25, 9, 20);
+                if (controls) controls.target.set(15, 12, 45);
+            } else if (type === 'isometric') {
+                camera.position.set(-50, 45, -50);
+                if (controls) controls.target.set(0, 2, 10);
+            }
+            if (controls) controls.update();
+        }
+
+        // --- CONECTAR EVENTOS DE ENTRADA / CONTROLES ---
+        function setupControls() {
+            document.getElementById('btn-morning').addEventListener('click', () => setTimeOfDay('morning'));
+            document.getElementById('btn-noon').addEventListener('click', () => setTimeOfDay('noon'));
+            document.getElementById('btn-sunset').addEventListener('click', () => setTimeOfDay('sunset'));
+            document.getElementById('btn-night').addEventListener('click', () => setTimeOfDay('night'));
+
+        }
+
+        // --- MANEJO DEL RAYCASTER (CLIC EN EL ESPACIO 3D) ---
+        function onDocumentPointerDown(event) {
+            // No interactuar si el clic fue en un elemento de la interfaz de usuario
+            if (event.target.tagName !== 'CANVAS') return;
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            // Obtener objetos interactivos (los grupos de pedestales)
+            const targets = [];
+            pedestals.forEach(p => {
+                if (p.group) {
+                    // Añadimos los hijos del pedestal para el raycasting
+                    p.group.traverse(child => {
+                        if (child.isMesh) {
+                            child.userData = { pedestalId: p.id }; // Añadir ID de referencia
+                            targets.push(child);
+                        }
+                    });
+                }
+            });
+
+            const intersects = raycaster.intersectObjects(targets);
+
+            if (intersects.length > 0) {
+                const clickedMesh = intersects[0].object;
+                if (clickedMesh.userData && clickedMesh.userData.pedestalId !== undefined) {
+                    selectPedestal(clickedMesh.userData.pedestalId);
+                }
+            }
+        }
+
+        // --- CONSTRUCTOR DE ESCENA 3D ---
+        function buildScene() {
+            createSky();
+            createOcean();
+            createPlazaAndLandscape();
+            createWoodenPier();
+            createGreekShip();
+            createTemples();
+            createDecorationsAndProps();
+            createPedestals(); // Construye los pedestales 3D
+        }
+
+        // --- CONSTRUCTORES ESPECÍFICOS ---
+
+        function createSky() {
+            const skyGeo = new THREE.SphereGeometry(450, 32, 15, 0, Math.PI * 2, 0, Math.PI / 2);
+            const canvas = document.createElement('canvas');
+            canvas.width = 2;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            const gradient = ctx.createLinearGradient(0, 0, 0, 128);
+            gradient.addColorStop(0, '#1a82e2');
+            gradient.addColorStop(1, '#8ce1ff');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 2, 128);
+
+            const skyTex = new THREE.CanvasTexture(canvas);
+            const skyMat = new THREE.MeshBasicMaterial({
+                map: skyTex,
+                side: THREE.BackSide,
+                depthWrite: false
+            });
+
+            skyMesh = new THREE.Mesh(skyGeo, skyMat);
+            skyMesh.rotation.y = Math.PI;
+            scene.add(skyMesh);
+        }
+
+        function updateSkyColor(topColorHex, bottomColorHex) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 2;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            const gradient = ctx.createLinearGradient(0, 0, 0, 128);
+            gradient.addColorStop(0, '#' + topColorHex.toString(16).padStart(6, '0'));
+            gradient.addColorStop(1, '#' + bottomColorHex.toString(16).padStart(6, '0'));
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 2, 128);
+
+            const newTex = new THREE.CanvasTexture(canvas);
+            skyMesh.material.map.dispose();
+            skyMesh.material.map = newTex;
+            skyMesh.material.needsUpdate = true;
+        }
+
+        function createOcean() {
+            const oceanGeo = new THREE.PlaneGeometry(900, 900, 64, 64);
+            const oceanMat = new THREE.MeshStandardMaterial({
+                color: 0x0c344d,
+                roughness: 0.15,
+                metalness: 0.1,
+                transparent: true,
+                opacity: 0.95,
+                flatShading: true
+            });
+
+            oceanMesh = new THREE.Mesh(oceanGeo, oceanMat);
+            oceanMesh.rotation.x = -Math.PI / 2;
+            oceanMesh.position.y = 0;
+            oceanMesh.receiveShadow = true;
+            scene.add(oceanMesh);
+        }
+
+        function createPlazaAndLandscape() {
+            const stoneMat = new THREE.MeshStandardMaterial({
+                color: 0x8a8885,
+                roughness: 0.8,
+                metalness: 0.1,
+                flatShading: true
+            });
+
+            const cliffGeo = new THREE.BoxGeometry(180, 20, 80);
+            const cliff = new THREE.Mesh(cliffGeo, stoneMat);
+            cliff.position.set(10, 8, 50);
+            cliff.receiveShadow = true;
+            cliff.castShadow = true;
+            scene.add(cliff);
+
+            const plazaWidth = 70;
+            const plazaDepth = 80;
+            const plazaGeo = new THREE.BoxGeometry(plazaWidth, 4, plazaDepth);
+            const plaza = new THREE.Mesh(plazaGeo, stoneMat);
+            plaza.position.set(10, 1.8, -5);
+            plaza.receiveShadow = true;
+            plaza.castShadow = true;
+            scene.add(plaza);
+
+            const stoneSize = 2.5;
+            const rows = plazaDepth / stoneSize;
+            const cols = plazaWidth / stoneSize;
+            const stoneGeo = new THREE.BoxGeometry(stoneSize - 0.2, 0.15, stoneSize - 0.2);
+            
+            const cobbleGroup = new THREE.Group();
+
+            for (let i = -cols/2; i < cols/2; i++) {
+                for (let j = -rows/2; j < rows/2; j++) {
+                    if (i * stoneSize + 10 < -20) continue;
+
+                    const rFactor = Math.sin(i * 10) * Math.cos(j * 10);
+                    const shade = 0x858380 + Math.floor(rFactor * 10) * 0x020202;
+                    
+                    const cobbleMat = new THREE.MeshStandardMaterial({
+                        color: shade,
+                        roughness: 0.9,
+                        metalness: 0.05
+                    });
+                    
+                    const stone = new THREE.Mesh(stoneGeo, cobbleMat);
+                    const hOffset = Math.sin(i + j) * 0.03;
+                    stone.position.set(
+                        i * stoneSize + 10 + (Math.random() - 0.5) * 0.1, 
+                        3.8 + hOffset, 
+                        j * stoneSize - 5 + (Math.random() - 0.5) * 0.1
+                    );
+                    stone.castShadow = true;
+                    stone.receiveShadow = true;
+                    cobbleGroup.add(stone);
+                }
+            }
+            scene.add(cobbleGroup);
+
+            const stairsGroup = new THREE.Group();
+            const stepGeo = new THREE.BoxGeometry(15, 0.8, 2.5);
+            for (let s = 0; s < 13; s++) {
+                const step = new THREE.Mesh(stepGeo, stoneMat);
+                step.position.set(10, 3.8 + s * 0.8, 10 + s * 2.1);
+                step.castShadow = true;
+                step.receiveShadow = true;
+                stairsGroup.add(step);
+            }
+            scene.add(stairsGroup);
+        }
+
+        function createWoodenPier() {
+            const woodDarkMat = new THREE.MeshStandardMaterial({
+                color: 0x3d2719,
+                roughness: 0.9,
+                metalness: 0.1
+            });
+            const woodLightMat = new THREE.MeshStandardMaterial({
+                color: 0x5a3d28,
+                roughness: 0.85,
+                metalness: 0.1
+            });
+
+            const pierGroup = new THREE.Group();
+
+            const postGeo = new THREE.CylinderGeometry(0.5, 0.5, 12, 6);
+            for (let z = -40; z <= 20; z += 10) {
+                const postL = new THREE.Mesh(postGeo, woodDarkMat);
+                postL.position.set(-33, 3, z);
+                postL.castShadow = true;
+                pierGroup.add(postL);
+
+                const postR = new THREE.Mesh(postGeo, woodDarkMat);
+                postR.position.set(-25, 3, z);
+                postR.castShadow = true;
+                pierGroup.add(postR);
+            }
+
+            const beamGeo = new THREE.BoxGeometry(1.2, 0.6, 62);
+            const beamL = new THREE.Mesh(beamGeo, woodDarkMat);
+            beamL.position.set(-33, 7, -10);
+            beamL.castShadow = true;
+            const beamR = beamL.clone();
+            beamR.position.set(-25, 7, -10);
+            pierGroup.add(beamL, beamR);
+
+            const plankGeo = new THREE.BoxGeometry(10, 0.2, 1.2);
+            for (let z = -41; z <= 21; z += 1.5) {
+                const plank = new THREE.Mesh(plankGeo, woodLightMat);
+                plank.rotation.y = (Math.random() - 0.5) * 0.04;
+                plank.position.set(-29, 7.3, z);
+                plank.castShadow = true;
+                plank.receiveShadow = true;
+                pierGroup.add(plank);
+            }
+
+            scene.add(pierGroup);
+        }
+
+        function createGreekShip() {
+            shipGroup = new THREE.Group();
+
+            const woodHullMat = new THREE.MeshStandardMaterial({
+                color: 0x4a2a16,
+                roughness: 0.7,
+                metalness: 0.2,
+                flatShading: true
+            });
+            const bronzeMat = new THREE.MeshStandardMaterial({
+                color: 0xcd7f32,
+                roughness: 0.3,
+                metalness: 0.9
+            });
+            const sailMat = new THREE.MeshStandardMaterial({
+                color: 0xeee7db,
+                roughness: 0.9,
+                side: THREE.DoubleSide
+            });
+            const ropeMat = new THREE.MeshStandardMaterial({
+                color: 0x222222,
+                roughness: 0.9
+            });
+
+            const hullCentral = new THREE.Mesh(new THREE.BoxGeometry(6, 4, 25), woodHullMat);
+            hullCentral.position.y = 2;
+            hullCentral.castShadow = true;
+            hullCentral.receiveShadow = true;
+            shipGroup.add(hullCentral);
+
+            const bowGeo = new THREE.ConeGeometry(3, 8, 4);
+            const bow = new THREE.Mesh(bowGeo, woodHullMat);
+            bow.rotation.x = Math.PI / 4;
+            bow.position.set(0, 4, 14);
+            bow.scale.set(1, 1.2, 0.5);
+            bow.castShadow = true;
+            shipGroup.add(bow);
+
+            const sternGeo = new THREE.ConeGeometry(3.2, 8, 4);
+            const stern = new THREE.Mesh(sternGeo, woodHullMat);
+            stern.rotation.x = -Math.PI / 3;
+            stern.position.set(0, 5, -14);
+            stern.scale.set(1, 1.3, 0.5);
+            stern.castShadow = true;
+            shipGroup.add(stern);
+
+            const ramGeo = new THREE.ConeGeometry(1.5, 4, 4);
+            const ram = new THREE.Mesh(ramGeo, bronzeMat);
+            ram.rotation.x = Math.PI / 2;
+            ram.position.set(0, 1.2, 17);
+            ram.castShadow = true;
+            shipGroup.add(ram);
+
+            const eyeGeo = new THREE.SphereGeometry(0.5, 8, 8);
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+            const eyeWhiteGeo = new THREE.SphereGeometry(0.6, 8, 8);
+            const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xeeeeee });
+            
+            const eyeR = new THREE.Mesh(eyeWhiteGeo, eyeWhiteMat);
+            eyeR.position.set(1.5, 4.5, 12);
+            eyeR.scale.set(1, 1, 0.2);
+            const pupilR = new THREE.Mesh(eyeGeo, eyeMat);
+            pupilR.position.set(1.6, 4.5, 12.1);
+            pupilR.scale.set(1, 1, 0.2);
+            shipGroup.add(eyeR, pupilR);
+
+            const eyeL = eyeR.clone();
+            eyeL.position.x = -1.5;
+            const pupilL = pupilR.clone();
+            pupilL.position.x = -1.6;
+            shipGroup.add(eyeL, pupilL);
+
+            const mastGeo = new THREE.CylinderGeometry(0.3, 0.45, 18, 8);
+            const mast = new THREE.Mesh(mastGeo, woodHullMat);
+            mast.position.set(0, 10, 0);
+            mast.castShadow = true;
+            shipGroup.add(mast);
+
+            const yardGeo = new THREE.CylinderGeometry(0.2, 0.2, 14, 8);
+            const yard = new THREE.Mesh(yardGeo, woodHullMat);
+            yard.rotation.z = Math.PI / 2;
+            yard.position.set(0, 16, 0);
+            yard.castShadow = true;
+            shipGroup.add(yard);
+
+            const sailGeo = new THREE.CylinderGeometry(6, 6.2, 10, 16, 1, true, 0, Math.PI);
+            const sail = new THREE.Mesh(sailGeo, sailMat);
+            sail.rotation.y = Math.PI / 2;
+            sail.position.set(0, 11, 0.5);
+            sail.scale.set(1, 1, 0.4);
+            sail.castShadow = true;
+            shipGroup.add(sail);
+
+            const ropeGeo = new THREE.CylinderGeometry(0.04, 0.04, 18, 4);
+            const ropeL = new THREE.Mesh(ropeGeo, ropeMat);
+            ropeL.rotation.z = -Math.PI / 10;
+            ropeL.position.set(-3.5, 9, 0);
+            const ropeR = ropeL.clone();
+            ropeR.rotation.z = Math.PI / 10;
+            ropeR.position.set(3.5, 9, 0);
+            shipGroup.add(ropeL, ropeR);
+
+            const oarWoodMat = new THREE.MeshStandardMaterial({ color: 0x8a5532 });
+            const oarCount = 8;
+            for (let r = 0; r < oarCount; r++) {
+                const zPos = -7 + r * 2.2;
+                if (zPos === 0) continue;
+
+                const oarL = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 8, 4), oarWoodMat);
+                oarL.rotation.z = Math.PI / 3.2;
+                oarL.rotation.x = Math.PI / 16;
+                oarL.position.set(-4.5, 1.8, zPos);
+                oarL.castShadow = true;
+                shipGroup.add(oarL);
+
+                const oarR = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 8, 4), oarWoodMat);
+                oarR.rotation.z = -Math.PI / 2.2;
+                oarR.position.set(4, 3, zPos);
+                oarR.castShadow = true;
+                shipGroup.add(oarR);
+            }
+
+            shipGroup.position.set(-42, 1.2, -10);
+            shipGroup.rotation.y = Math.PI / 32;
+            scene.add(shipGroup);
+        }
+
+        function createTemples() {
+            createClassicalTemple(10, 48, 28, 44, 18);
+            createClassicalTemple(55, 45, 18, 30, 14);
+        }
+
+        function createClassicalTemple(x, z, width, depth, totalHeight) {
+            const templeGroup = new THREE.Group();
+
+            const marbleMat = new THREE.MeshStandardMaterial({
+                color: 0xfcfbf7,
+                roughness: 0.25,
+                metalness: 0.05,
+                flatShading: true
+            });
+
+            const roofInnerMat = new THREE.MeshStandardMaterial({
+                color: 0xaa4433,
+                roughness: 0.8,
+                metalness: 0.1
+            });
+
+            const goldTrimMat = new THREE.MeshStandardMaterial({
+                color: 0xd4af37,
+                roughness: 0.3,
+                metalness: 0.8
+            });
+
+            const stepHeight = totalHeight * 0.04;
+            for (let i = 0; i < 3; i++) {
+                const sWidth = width + (2 - i) * 1.5;
+                const sDepth = depth + (2 - i) * 1.5;
+                const baseStep = new THREE.Mesh(
+                    new THREE.BoxGeometry(sWidth, stepHeight, sDepth),
+                    marbleMat
+                );
+                baseStep.position.y = (i * stepHeight) + stepHeight/2;
+                baseStep.receiveShadow = true;
+                baseStep.castShadow = true;
+                templeGroup.add(baseStep);
+            }
+
+            const columnsBaseY = 3 * stepHeight;
+
+            const colHeight = totalHeight * 0.55;
+            const colRadius = width * 0.035;
+            const colGeo = new THREE.CylinderGeometry(colRadius * 0.85, colRadius, colHeight, 8);
+            
+            const numX = Math.round(width / (colRadius * 4));
+            const numZ = Math.round(depth / (colRadius * 4));
+
+            const offsetStartX = width/2 - colRadius * 1.5;
+            const offsetStartZ = depth/2 - colRadius * 1.5;
+
+            for (let cx = 0; cx < numX; cx++) {
+                for (let cz = 0; cz < numZ; cz++) {
+                    if (cx === 0 || cx === numX - 1 || cz === 0 || cz === numZ - 1) {
+                        const colX = -offsetStartX + (cx * (offsetStartX * 2 / (numX - 1)));
+                        const colZ = -offsetStartZ + (cz * (offsetStartZ * 2 / (numZ - 1)));
+
+                        const col = new THREE.Mesh(colGeo, marbleMat);
+                        col.position.set(colX, columnsBaseY + colHeight/2, colZ);
+                        col.castShadow = true;
+                        col.receiveShadow = true;
+                        templeGroup.add(col);
+
+                        const capGeo = new THREE.BoxGeometry(colRadius * 2.4, colHeight * 0.06, colRadius * 2.4);
+                        const cap = new THREE.Mesh(capGeo, marbleMat);
+                        cap.position.set(colX, columnsBaseY + colHeight + (colHeight * 0.03), colZ);
+                        cap.castShadow = true;
+                        templeGroup.add(cap);
+                    }
+                }
+            }
+
+            const cellaWidth = width * 0.6;
+            const cellaDepth = depth * 0.7;
+            const cellaHeight = colHeight;
+            const cella = new THREE.Mesh(
+                new THREE.BoxGeometry(cellaWidth, cellaHeight, cellaDepth),
+                marbleMat
+            );
+            cella.position.set(0, columnsBaseY + cellaHeight/2, 0);
+            cella.castShadow = true;
+            cella.receiveShadow = true;
+            templeGroup.add(cella);
+
+            const entHeight = totalHeight * 0.12;
+            const ent = new THREE.Mesh(
+                new THREE.BoxGeometry(width, entHeight, depth),
+                marbleMat
+            );
+            ent.position.set(0, columnsBaseY + colHeight + (colHeight * 0.06) + entHeight/2, 0);
+            ent.castShadow = true;
+            ent.receiveShadow = true;
+            templeGroup.add(ent);
+
+            const roofY = columnsBaseY + colHeight + (colHeight * 0.06) + entHeight;
+            const roofPeakHeight = totalHeight * 0.22;
+
+            const roofShape = new THREE.Shape();
+            roofShape.moveTo(-width/2, 0);
+            roofShape.lineTo(0, roofPeakHeight);
+            roofShape.lineTo(width/2, 0);
+            roofShape.closePath();
+
+            const extrudeSettings = {
+                depth: depth,
+                bevelEnabled: true,
+                bevelSegments: 2,
+                steps: 1,
+                bevelSize: 0.3,
+                bevelThickness: 0.3
+            };
+
+            const roofGeo = new THREE.ExtrudeGeometry(roofShape, extrudeSettings);
+            const roof = new THREE.Mesh(roofGeo, roofInnerMat);
+            roof.position.set(0, roofY, -depth/2);
+            roof.castShadow = true;
+            roof.receiveShadow = true;
+            templeGroup.add(roof);
+
+            const trimThickness = 0.5;
+            const frontPedimentTrim = new THREE.Mesh(
+                new THREE.BoxGeometry(width + 1, trimThickness, 1.5),
+                marbleMat
+            );
+            frontPedimentTrim.position.set(0, roofY, depth/2 + 0.2);
+            templeGroup.add(frontPedimentTrim);
+
+            const acroGeo = new THREE.ConeGeometry(colRadius, colRadius * 3, 4);
+            const acro = new THREE.Mesh(acroGeo, goldTrimMat);
+            acro.position.set(0, roofY + roofPeakHeight + (colRadius*1.5), depth/2);
+            templeGroup.add(acro);
+            
+            const acroBack = acro.clone();
+            acroBack.position.z = -depth/2;
+            templeGroup.add(acroBack);
+
+            templeGroup.position.set(x, 18, z);
+            scene.add(templeGroup);
+        }
+
+        function createDecorationsAndProps() {
+            const woodMat = new THREE.MeshStandardMaterial({ color: 0x5e3f28, roughness: 0.85 });
+            const ironMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8, roughness: 0.2 });
+            const bronzeMat = new THREE.MeshStandardMaterial({ color: 0xcd7f32, metalness: 0.7, roughness: 0.4 });
+            const fireMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+
+            const barrelGroup = new THREE.Group();
+            
+            const cylGeo = new THREE.CylinderGeometry(1.2, 1.4, 3, 10);
+            const ringGeo = new THREE.CylinderGeometry(1.42, 1.42, 0.1, 10, 1, true);
+
+            const b1 = new THREE.Mesh(cylGeo, woodMat);
+            b1.castShadow = true; b1.receiveShadow = true;
+            const r1 = new THREE.Mesh(ringGeo, ironMat);
+            r1.position.y = 0.8;
+            const r2 = r1.clone();
+            r2.position.y = -0.8;
+            b1.add(r1, r2);
+            b1.position.set(-27, 8.8, 10);
+            barrelGroup.add(b1);
+
+            const b2 = b1.clone();
+            b2.rotation.x = Math.PI / 2;
+            b2.position.set(-29.5, 8.1, 8);
+            barrelGroup.add(b2);
+
+            const boxGeo = new THREE.BoxGeometry(2.4, 2.4, 2.4);
+            const boxMat = new THREE.MeshStandardMaterial({ color: 0x7a583a, roughness: 0.9 });
+            const box1 = new THREE.Mesh(boxGeo, boxMat);
+            box1.position.set(-28, 8.5, -5);
+            box1.rotation.y = Math.PI / 6;
+            box1.castShadow = true; box1.receiveShadow = true;
+            barrelGroup.add(box1);
+
+            scene.add(barrelGroup);
+
+        }
+
+        // --- CONSTRUCTOR DE PEDESTALES (BALDOSAS) ---
+        function createPedestals() {
+            // Materiales de mármol pulido y oro para la base
+            const baseMat = new THREE.MeshStandardMaterial({
+                color: 0xeae8e2,
+                roughness: 0.15,
+                metalness: 0.1,
+                flatShading: true
+            });
+
+            const goldTrimMat = new THREE.MeshStandardMaterial({
+                color: 0xd4af37,
+                roughness: 0.2,
+                metalness: 0.8
+            });
+
+            pedestals.forEach(p => {
+                const pGroup = new THREE.Group();
+                pGroup.position.set(...p.pos);
+
+                // 1. Base principal cilíndrica (La baldosa)
+                const baseGeo = new THREE.CylinderGeometry(2.4, 2.6, 0.6, 16);
+                const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+                baseMesh.position.y = 0.3;
+                baseMesh.receiveShadow = true;
+                baseMesh.castShadow = true;
+                pGroup.add(baseMesh);
+
+                // 2. Aro superior dorado
+                const ringGeo = new THREE.CylinderGeometry(2.2, 2.2, 0.1, 16, 1, true);
+                const ringMesh = new THREE.Mesh(ringGeo, goldTrimMat);
+                ringMesh.position.y = 0.61;
+                pGroup.add(ringMesh);
+
+                // 3. Aro brillante mágico (Cian para Izquierda, Ámbar para Centro, Rosa/Magenta para Derecha)
+                let energyColor = 0x00ffff; // Izquierda por defecto (Cian)
+                if (p.type === 'center') energyColor = 0xf59e0b; // Centro (Ámbar)
+                if (p.type === 'right') energyColor = 0xec4899;  // Derecha (Rosa)
+
+                const energyMat = new THREE.MeshBasicMaterial({
+                    color: energyColor,
+                    transparent: true,
+                    opacity: 0.6
+                });
+                
+                const glowRing = new THREE.Mesh(new THREE.TorusGeometry(2.0, 0.1, 8, 24), energyMat);
+                glowRing.rotation.x = Math.PI / 2;
+                glowRing.position.y = 0.66;
+                pGroup.add(glowRing);
+
+                // 4. Haz de luz cilíndrico (Holograma de invocación)
+                const beamGeo = new THREE.CylinderGeometry(1.8, 1.8, 4, 16, 1, true);
+                const beamMat = new THREE.MeshBasicMaterial({
+                    color: energyColor,
+                    transparent: true,
+                    opacity: 0.08,
+                    side: THREE.DoubleSide
+                });
+                const beam = new THREE.Mesh(beamGeo, beamMat);
+                beam.position.y = 2.6;
+                pGroup.add(beam);
+
+                // Guardar referencia
+                p.group = pGroup;
+                scene.add(pGroup);
+
+                // Personaje 3D único
+                createCharacter3D(p);
+                // Barras flotantes (vida + energía + nombre)
+                makeBarSprite(p);
+            });
+        }
+
+       
+        // === DATOS DE PERSONAJES ===
+        const CHARACTER_DATA = {
+            "Holograma 1": {
+                charName: "HÉRCULES",
+                hp: 850, maxHp: 850,
+                energy: 80, maxEnergy: 80,
+                role: "Tanque/DPS", color: 0xe8a020, skinColor: 0xc8845a, team: "heroes",
+                // Stats de combate (para lógica de juego)
+                atk: 120, def: 110, evasion: 0.10, precision: 0.78,
+                energyRegen: 10, critChance: 0.15, critMult: 2.2
+            },
+            "Holograma 2": {
+                charName: "JASÓN",
+                hp: 480, maxHp: 480,
+                energy: 110, maxEnergy: 110,
+                role: "Líder equilibrado", color: 0x3090e0, skinColor: 0xd4956a, team: "heroes",
+                atk: 85, def: 65, evasion: 0.12, precision: 0.85,
+                energyRegen: 15, critChance: 0.20, critMult: 1.8
+            },
+            "Holograma 3": {
+                charName: "ORFEO",
+                hp: 360, maxHp: 360,
+                energy: 160, maxEnergy: 160,
+                role: "Soporte", color: 0x8040c0, skinColor: 0xbf8060, team: "heroes",
+                atk: 45, def: 50, evasion: 0.14, precision: 0.88,
+                energyRegen: 28, critChance: 0.10, critMult: 1.5
+            },
+            // "Holograma 4" is the BATTLE STAGE — always empty, characters move here during actions
+            "Holograma 5": {
+                charName: "GUARDIA I",
+                hp: 180, maxHp: 180,
+                energy: 0, maxEnergy: 0,
+                role: "Guardia Real", color: 0xc02020, skinColor: 0xa06040, team: "guards",
+                atk: 45, def: 30, evasion: 0.08, precision: 0.92,
+                energyRegen: 0, critChance: 0.12, critMult: 1.4
+            },
+            "Holograma 6": {
+                charName: "GUARDIA II",
+                hp: 180, maxHp: 180,
+                energy: 0, maxEnergy: 0,
+                role: "Guardia Real", color: 0xc02020, skinColor: 0xa06040, team: "guards",
+                atk: 45, def: 30, evasion: 0.08, precision: 0.92,
+                energyRegen: 0, critChance: 0.12, critMult: 1.4
+            },
+            "Holograma 7": {
+                charName: "GUARDIA III",
+                hp: 180, maxHp: 180,
+                energy: 0, maxEnergy: 0,
+                role: "Guardia Real", color: 0xc02020, skinColor: 0xa06040, team: "guards",
+                atk: 45, def: 30, evasion: 0.08, precision: 0.92,
+                energyRegen: 0, critChance: 0.12, critMult: 1.4
+            }
+        };
+
+        // Sprites de barras flotantes (referencias para actualizar)
+        const barSprites = {};
+
+        function makeBarSprite(pedestal) {
+            const cd = CHARACTER_DATA[pedestal.name];
+            if (!cd) return;
+
+            const W = 256, H = 80;
+            const canvas = document.createElement('canvas');
+            canvas.width = W; canvas.height = H;
+            const ctx = canvas.getContext('2d');
+
+            function draw() {
+                ctx.clearRect(0, 0, W, H);
+
+                // Nombre
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(cd.charName, W/2, 14);
+
+                // Barra vida
+                ctx.fillStyle = '#333';
+                ctx.fillRect(10, 22, W-20, 16);
+                ctx.fillStyle = '#e04040';
+                ctx.fillRect(10, 22, (W-20) * (cd.hp / cd.maxHp), 16);
+                ctx.fillStyle = '#fff';
+                ctx.font = '11px Arial';
+                ctx.textAlign = 'left';
+                ctx.fillText(`❤ ${cd.hp}/${cd.maxHp}`, 13, 34);
+
+                // Barra energía
+                ctx.fillStyle = '#333';
+                ctx.fillRect(10, 44, W-20, 16);
+                ctx.fillStyle = '#4080e0';
+                ctx.fillRect(10, 44, (W-20) * (cd.energy / cd.maxEnergy), 16);
+                ctx.fillStyle = '#fff';
+                ctx.fillText(`⚡ ${cd.energy}/${cd.maxEnergy}`, 13, 56);
+            }
+
+            draw();
+            const tex = new THREE.CanvasTexture(canvas);
+            const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+            const sprite = new THREE.Sprite(mat);
+            sprite.scale.set(7, 2.2, 1);
+            sprite.position.set(0, 9, 0);
+            pedestal.group.add(sprite);
+
+            barSprites[pedestal.id] = { canvas, ctx, tex, draw, cd };
+        }
+
+        // Construye un personaje 3D según su nombre
+        function createCharacter3D(pedestal) {
+            const cd = CHARACTER_DATA[pedestal.name];
+            if (!cd) return;
+
+            const g = new THREE.Group();
+            g.position.y = 0.65;
+
+            const skin = new THREE.MeshStandardMaterial({ color: cd.skinColor, roughness: 0.7 });
+            const main = new THREE.MeshStandardMaterial({ color: cd.color, roughness: 0.4, metalness: 0.3 });
+            const dark = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+            const gold = new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.2, metalness: 0.9 });
+            const white= new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.5 });
+
+            // Piernas
+            [-0.22, 0.22].forEach(x => {
+                const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.15, 1.0, 7), skin);
+                leg.position.set(x, 0.5, 0); g.add(leg);
+                const boot = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.38), dark);
+                boot.position.set(x, 0.05, 0.06); g.add(boot);
+            });
+
+            // Torso
+            const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.32, 1.1, 8), main);
+            torso.position.y = 1.45; g.add(torso);
+
+            // Cabeza
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 10), skin);
+            head.position.y = 2.25; g.add(head);
+
+            if (pedestal.name === "Holograma 1") {
+                // HÉRCULES: enorme, maza, piel de león
+                torso.scale.set(1.3, 1.2, 1.3);
+                head.scale.set(1.15, 1.15, 1.15);
+                // Piel de león (capa naranja)
+                const cape = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.1, 6), new THREE.MeshStandardMaterial({color:0xc07820,roughness:0.9}));
+                cape.position.set(-0.1, 1.6, -0.1); cape.rotation.x = 0.3; g.add(cape);
+                // Maza (brazo derecho)
+                const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.6, 6), dark);
+                handle.position.set(0.8, 1.6, 0.3); handle.rotation.z = -0.5; g.add(handle);
+                const head2 = new THREE.Mesh(new THREE.SphereGeometry(0.28, 7, 7), dark);
+                head2.position.set(1.35, 2.05, 0.55); g.add(head2);
+                // Casco con cresta
+                const helm = new THREE.Mesh(new THREE.SphereGeometry(0.38, 8, 8), gold);
+                helm.position.set(0, 2.6, 0); helm.scale.y = 0.75; g.add(helm);
+                const crest = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.45, 0.7), new THREE.MeshStandardMaterial({color:0xcc2200}));
+                crest.position.set(0, 2.95, 0); g.add(crest);
+
+            } else if (pedestal.name === "Holograma 2") {
+                // JASÓN: modelo 3D GLB embebido con animación Mixamo
+                loadSoldadoInPedestal(pedestal);
+                return; // carga asíncrona
+
+            } else if (pedestal.name === "Holograma 3") {
+                // ORFEO: delgado, lira, túnica, corona de laurel
+                torso.scale.set(0.85, 1.0, 0.85);
+                // Túnica (más larga)
+                const tunic = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.5, 1.3, 8), white);
+                tunic.position.y = 0.95; g.add(tunic);
+                // Lira
+                const liraBody = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.07, 6, 10, Math.PI), new THREE.MeshStandardMaterial({color:0xd4af37,roughness:0.3,metalness:0.7}));
+                liraBody.position.set(0.7, 1.7, 0.1); liraBody.rotation.z = Math.PI/2; g.add(liraBody);
+                const liraBase = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.7, 0.07), gold);
+                liraBase.position.set(0.7, 1.35, 0.1); g.add(liraBase);
+                // Cuerdas lira
+                for(let i=0;i<4;i++){
+                    const str = new THREE.Mesh(new THREE.CylinderGeometry(0.01,0.01,0.72,3), gold);
+                    str.position.set(0.7+(-0.15+i*0.1), 1.7, 0.1); str.rotation.z = 0.05; g.add(str);
+                }
+                // Corona de laurel
+                const crown = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.05, 5, 12), new THREE.MeshStandardMaterial({color:0x228822,roughness:0.8}));
+                crown.position.set(0, 2.58, 0); crown.rotation.x = Math.PI/2; g.add(crown);
+
+            } else {
+                // GUARDIAS: holograma 3D simple (escudo y lanza)
+                // Lanza
+                const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.2, 6), dark);
+                shaft.position.set(0.7, 1.6, 0.2); g.add(shaft);
+                const tip = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.4, 6), gold);
+                tip.position.set(0.7, 2.8, 0.2); g.add(tip);
+                // Escudo oval
+                const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.09, 10), main);
+                sh.rotation.z = Math.PI/2; sh.position.set(-0.7, 1.4, 0.1); g.add(sh);
+                // Casco
+                const helm2 = new THREE.Mesh(new THREE.SphereGeometry(0.36, 8, 8), dark);
+                helm2.position.set(0, 2.6, 0); helm2.scale.y = 0.78; g.add(helm2);
+            }
+
+            // Sombras
+            g.traverse(n => { if(n.isMesh){ n.castShadow=true; n.receiveShadow=true; }});
+
+            pedestal.group.add(g);
+            pedestal.character = g;
+            pedestal.status = "Activo";
+        }
+
+
+        // ── Parche único: Three.js usa fetch() incluso para data:URI (bloqueado por CSP).
+        //    Sobreescribimos FileLoader e ImageLoader para que los data:URI se resuelvan
+        //    con JS puro (atob / new Image), sin ninguna llamada de red. ──
+        let _loaderPatched = false;
+        function patchThreeForDataURI() {
+            if (_loaderPatched) return;
+            _loaderPatched = true;
+
+            // FileLoader → manejar data:URI con atob
+            const _origFileLoad = THREE.FileLoader.prototype.load;
+            THREE.FileLoader.prototype.load = function(url, onLoad, onProgress, onError) {
+                if (typeof url === 'string' && url.startsWith('data:')) {
+                    try {
+                        const b64  = url.slice(url.indexOf(',') + 1);
+                        const bin  = atob(b64);
+                        if (this.responseType === 'arraybuffer') {
+                            const buf  = new ArrayBuffer(bin.length);
+                            const view = new Uint8Array(buf);
+                            for (let i = 0; i < bin.length; i++) view[i] = bin.charCodeAt(i);
+                            setTimeout(() => onLoad && onLoad(buf), 0);
+                        } else {
+                            setTimeout(() => onLoad && onLoad(bin), 0);
+                        }
+                    } catch(e) { if (onError) onError(e); }
+                    return this;
+                }
+                return _origFileLoad.call(this, url, onLoad, onProgress, onError);
+            };
+
+            // ImageLoader → manejar data:URI con new Image() nativo
+            const _origImgLoad = THREE.ImageLoader.prototype.load;
+            THREE.ImageLoader.prototype.load = function(url, onLoad, onProgress, onError) {
+                if (typeof url === 'string' && url.startsWith('data:')) {
+                    const img = new Image();
+                    img.onload  = () => { if (onLoad) onLoad(img); };
+                    img.onerror = (e) => { if (onError) onError(e); };
+                    img.src = url;
+                    return img;
+                }
+                return _origImgLoad.call(this, url, onLoad, onProgress, onError);
+            };
+        }
+
+        // Carga a JASÓN desde un FBX de Mixamo (animación neutral)
+        function loadSoldadoInPedestal(pedestal) {
+            const FBX_URL = "https://cdn.jsdelivr.net/gh/salomonbonilla28-ui/Juego-Jason@main/Movimiento%20neutral%20Jason.fbx";
+
+            const loader = new THREE.FBXLoader();
+            loader.load(FBX_URL, (object) => {
+
+                // Escalar dinámicamente al mismo targetHeight que los demás personajes (3.5 u)
+                const targetHeight = 5.5;
+                object.updateMatrixWorld(true);
+                const box    = new THREE.Box3().setFromObject(object);
+                const size   = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
+                const scaleFactor = targetHeight / size.y;
+                object.scale.setScalar(scaleFactor);
+                // Recalcular BB con la nueva escala para centrar correctamente
+                object.updateMatrixWorld(true);
+                const box2    = new THREE.Box3().setFromObject(object);
+                const size2   = box2.getSize(new THREE.Vector3());
+                const center2 = box2.getCenter(new THREE.Vector3());
+                // Apoyar pies sobre el pedestal (y=0.65)
+                object.position.y = 0.65 - (center2.y - size2.y / 2);
+                object.position.x = -center2.x;
+                object.position.z = -center2.z;
+
+                // Mirar hacia el interior de la escena
+                object.rotation.y = -Math.PI / 2;
+
+                // Sombras + normalizar materiales FBX/Mixamo
+                object.traverse(n => {
+                    if (n.isMesh) {
+                        n.castShadow    = true;
+                        n.receiveShadow = true;
+                        const mats = Array.isArray(n.material) ? n.material : [n.material];
+                        mats.forEach(m => {
+                            // Fix color negro
+                            if (m.color && m.color.r === 0 && m.color.g === 0 && m.color.b === 0) {
+                                m.color.set(0xd4956a);
+                            }
+                            // Apagar brillo excesivo de FBX
+                            if (m.isMeshPhongMaterial) {
+                                m.shininess  = 10;
+                                m.specular && m.specular.set(0x111111);
+                            }
+                            if (m.isMeshStandardMaterial) {
+                                m.roughness  = 0.75;
+                                m.metalness  = 0.05;
+                                m.envMapIntensity = 0.3;
+                            }
+                            m.needsUpdate = true;
+                        });
+                    }
+                });
+
+                // AnimationMixer: activar todas las clips de Mixamo en loop
+                console.log("[Jason FBX] animaciones encontradas:", object.animations.length, object.animations.map(a => a.name));
+                if (object.animations && object.animations.length > 0) {
+                    const mixer = new THREE.AnimationMixer(object);
+                    const action = mixer.clipAction(object.animations[0]);
+                    action.setLoop(THREE.LoopRepeat, Infinity);
+                    action.clampWhenFinished = false;
+                    action.play();
+                    pedestal.mixer = mixer;
+                    mixerClock.stop();
+                    mixerClock.start(); // resetear para que getDelta() empiece desde 0
+                }
+
+                pedestal.group.add(object);
+                pedestal.character = object;
+                pedestal.status    = "Jason 3D";
+
+            }, undefined, (err) => {
+                console.error("Error cargando FBX de Jason:", err);
+            });
+        }
+
+        // --- MANEJO DE SELECCIÓN Y GESTIÓN DE PERSONAJES ---
+
+        // Generar dinámicamente la lista de baldosas en el panel de control
+        function buildPedestalsListUI() {
+            const container = document.getElementById('pedestals-list');
+            if (!container) return;
+            container.innerHTML = '';
+
+            pedestals.forEach(p => {
+                let badgeColor = 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30';
+                if (p.type === 'center') badgeColor = 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+                if (p.type === 'right') badgeColor = 'bg-pink-500/20 text-pink-400 border-pink-500/30';
+
+                const btn = document.createElement('button');
+                btn.id = `btn-pedestal-item-${p.id}`;
+                btn.className = `w-full px-3 py-2 text-left rounded-xl border text-xs font-semibold flex items-center justify-between transition-all hover:bg-slate-800/80 pointer-events-auto bg-slate-900/40 border-slate-800`;
+                btn.onclick = () => selectPedestal(p.id);
+
+                btn.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full ${p.type === 'center' ? 'bg-amber-500' : p.type === 'right' ? 'bg-pink-500' : 'bg-cyan-500'} animate-pulse"></span>
+                        <span class="text-slate-200">${p.name}</span>
+                    </div>
+                    <span class="px-1.5 py-0.5 rounded text-[9px] border font-mono ${badgeColor}">${p.status}</span>
+                `;
+
+                container.appendChild(btn);
+            });
+        }
+
+        // Selección activa de un pedestal
+        function selectPedestal(id) {
+            selectedPedestalId = id;
+            const p = pedestals[id];
+
+            // 1. Cambiar visual del botón seleccionado en la UI
+            pedestals.forEach(pObj => {
+                const btn = document.getElementById(`btn-pedestal-item-${pObj.id}`);
+                if (btn) {
+                    btn.classList.remove('active-ring', 'bg-slate-800/90', 'border-amber-500/50');
+                    btn.classList.add('bg-slate-900/40', 'border-slate-800');
+                }
+            });
+
+            const activeBtn = document.getElementById(`btn-pedestal-item-${id}`);
+            if (activeBtn) {
+                activeBtn.classList.remove('bg-slate-900/40', 'border-slate-800');
+                activeBtn.classList.add('active-ring', 'bg-slate-800/90', 'border-amber-500/50');
+            }
+
+            // 2. Actualizar HUD lateral
+            const cd = CHARACTER_DATA[p.name];
+            const hud = document.getElementById('hud-panel');
+            if (cd && hud) {
+                hud.classList.add('visible');
+                const teamColors = { heroes: '#60a0f0', guards: '#f06060', neutral: '#f0c040' };
+                document.getElementById('hud-name').textContent = cd.charName;
+                document.getElementById('hud-name').style.color = teamColors[cd.team] || '#fff';
+
+                const hpPct = (cd.hp / cd.maxHp * 100).toFixed(0);
+                document.getElementById('hud-hp-fill').style.width = hpPct + '%';
+                document.getElementById('hud-hp-val').textContent = `${cd.hp} / ${cd.maxHp}`;
+
+                // Energía: ocultar para guardias (maxEnergy = 0)
+                const energyBlock = document.getElementById('hud-energy-block');
+                if (energyBlock) {
+                    energyBlock.style.display = cd.maxEnergy > 0 ? '' : 'none';
+                }
+                if (cd.maxEnergy > 0) {
+                    const enPct = (cd.energy / cd.maxEnergy * 100).toFixed(0);
+                    document.getElementById('hud-en-fill').style.width = enPct + '%';
+                    document.getElementById('hud-en-val').textContent = `${cd.energy} / ${cd.maxEnergy}`;
+                }
+
+                // Stats extra (ATK / DEF)
+                const statsExtra = document.getElementById('hud-stats-extra');
+                if (statsExtra) {
+                    statsExtra.textContent = `ATK ${cd.atk}  •  DEF ${cd.def}  •  EVA ${Math.round(cd.evasion*100)}%`;
+                }
+
+                document.getElementById('hud-role').textContent = `Rol: ${cd.role}  •  Equipo: ${cd.team}`;
+            }
+
+            // 4. Enfocar cámara
+            if (controls) {
+                controls.target.set(p.pos[0], p.pos[1] + 2, p.pos[2]);
+                controls.update();
+            }
+        }
+
+        // --- ESCENARIO DE ACCIÓN (Pedestal Central id=3) ---
+        // Mueve el personaje del pedestal `fromId` al centro, ejecuta el callback y lo devuelve.
+        const ACTION_STAGE_ID = 3; // Holograma 4 = pedestal central
+        let actionInProgress = false;
+
+        function performAction(fromId, onStageCallback) {
+            if (actionInProgress) return;
+            const origin = pedestals[fromId];
+            const stage  = pedestals[ACTION_STAGE_ID];
+            if (!origin || !origin.character) return;
+            if (fromId === ACTION_STAGE_ID) return; // ya está en el centro
+
+            actionInProgress = true;
+
+            // Posiciones en espacio mundial
+            const originPos = new THREE.Vector3(...origin.pos);
+            const stagePos  = new THREE.Vector3(...stage.pos);
+
+            // Sacar el personaje del grupo del pedestal origen y moverlo a la escena directamente
+            const char = origin.character;
+            // Convertir posición local → mundial
+            origin.group.localToWorld(char.position);
+            origin.group.remove(char);
+            scene.add(char);
+
+            // Altura de "salto" en el viaje de ida
+            const jumpHeight = 6;
+
+            // ---- ANIMACIÓN IDA ----
+            tweenMove(char.position, stagePos, 0.8, jumpHeight, () => {
+                // Colocar personaje sobre el pedestal central (relativo a su grupo)
+                scene.remove(char);
+                stage.group.add(char);
+                char.position.set(0, 0.65, 0);
+
+                // Ejecutar lógica de acción (si la hay)
+                if (typeof onStageCallback === 'function') onStageCallback();
+
+                // Esperar un momento en escena y luego devolver
+                setTimeout(() => {
+                    // Sacar del grupo central
+                    stage.group.localToWorld(char.position);
+                    stage.group.remove(char);
+                    scene.add(char);
+
+                    // ---- ANIMACIÓN VUELTA ----
+                    tweenMove(char.position, originPos, 0.8, jumpHeight, () => {
+                        // Devolver al grupo origen
+                        scene.remove(char);
+                        origin.group.add(char);
+                        char.position.set(0, 0.65, 0);
+                        actionInProgress = false;
+                    });
+                }, 1200); // tiempo en escena
+            });
+        }
+
+        // Interpolación suave con arco de salto usando requestAnimationFrame
+        function tweenMove(currentPos, targetPos, durationSec, arcHeight, onComplete) {
+            const startPos = currentPos.clone();
+            const startTime = performance.now();
+            const durationMs = durationSec * 1000;
+
+            function step(now) {
+                const t = Math.min((now - startTime) / durationMs, 1);
+                const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t; // easeInOut
+
+                currentPos.lerpVectors(startPos, targetPos, ease);
+                // Arco parabólico en Y
+                currentPos.y = THREE.MathUtils.lerp(startPos.y, targetPos.y, ease)
+                             + arcHeight * Math.sin(Math.PI * t);
+
+                if (t < 1) {
+                    requestAnimationFrame(step);
+                } else {
+                    currentPos.copy(targetPos);
+                    if (onComplete) onComplete();
+                }
+            }
+            requestAnimationFrame(step);
+        }
+
+        // Cargar un archivo .glb de forma remota (p. ej. desde Dropbox)
+        function loadRemoteCharacter(id, url) {
+            const p = pedestals[id];
+            if (!p) return;
+
+            const gltfLoader = new THREE.GLTFLoader();
+            gltfLoader.load(url, (gltf) => {
+                const model = gltf.scene;
+
+                // Eliminar el holograma por defecto o modelo anterior
+                removeCharacterFromPedestal(id);
+
+                // Calcular tamaño automático y centrar el modelo cargado
+                const box = new THREE.Box3().setFromObject(model);
+                const size = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
+
+                // Escalar a una altura estándar
+                const targetHeight = 5.5;
+                const scaleFactor = targetHeight / size.y;
+                model.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
+                // Ajustar pivote para que los pies queden sobre el pedestal
+                model.position.y = 0.6 - (center.y - size.y / 2) * scaleFactor;
+                model.position.x = -center.x * scaleFactor;
+                model.position.z = -center.z * scaleFactor;
+
+                // Habilitar sombras
+                model.traverse(node => {
+                    if (node.isMesh) {
+                        node.castShadow = true;
+                        node.receiveShadow = true;
+                    }
+                });
+
+                p.group.add(model);
+                p.character = model;
+                p.status = "Jason 3D";
+
+                // Actualizar la interfaz
+                buildPedestalsListUI();
+                selectPedestal(id);
+            }, undefined, (error) => {
+                console.warn("No se pudo cargar el personaje remoto automáticamente (posible restricción de CORS).", error);
+            });
+        }
+
+        // Carga y renderizado de archivo .GLB / .GLTF local
+        function handleGLBUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            
+            // Mostrar pantalla de carga rápida
+            const loaderEl = document.getElementById('loader');
+            if (loaderEl) {
+                loaderEl.classList.remove('opacity-0');
+                const loadText = loaderEl.querySelector('p');
+                if (loadText) loadText.innerText = "Importando modelo 3D GLB...";
+            }
+
+            // Crear una URL temporal del archivo cargado
+            const url = URL.createObjectURL(file);
+
+            const gltfLoader = new THREE.GLTFLoader();
+            gltfLoader.load(url, (gltf) => {
+                const model = gltf.scene;
+
+                // Preparar pedestal para recibir el nuevo modelo
+                removeCharacterFromPedestal(selectedPedestalId);
+
+                // Calcular tamaño automático y centrar el modelo cargado
+                const box = new THREE.Box3().setFromObject(model);
+                const size = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
+
+                // Escalar a una altura estándar de aprox. 3.5 unidades para que quepa bien
+                const targetHeight = 5.5;
+                const scaleFactor = targetHeight / size.y;
+                model.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
+                // Ajustar pivote para que los pies queden sobre el pedestal
+                model.position.y = 0.6 - (center.y - size.y / 2) * scaleFactor;
+                model.position.x = -center.x * scaleFactor;
+                model.position.z = -center.z * scaleFactor;
+
+                // Habilitar sombras para el modelo cargado
+                model.traverse(node => {
+                    if (node.isMesh) {
+                        node.castShadow = true;
+                        node.receiveShadow = true;
+                    }
+                });
+
+                // Incorporar el modelo al grupo del pedestal correspondiente
+                const p = pedestals[selectedPedestalId];
+                p.group.add(model);
+                p.character = model;
+                p.status = "Cargado";
+
+                // Actualizar interfaz
+                buildPedestalsListUI();
+                selectPedestal(selectedPedestalId);
+
+                // Ocultar pantalla de carga
+                if (loaderEl) loaderEl.classList.add('opacity-0');
+            }, undefined, (error) => {
+                console.error("Error al cargar el archivo GLB:", error);
+                if (loaderEl) loaderEl.classList.add('opacity-0');
+            });
+        }
+
+        // Eliminar personaje o reiniciar el pedestal
+        function removeCharacterFromPedestal(id) {
+            const p = pedestals[id];
+            if (p.character) {
+                p.group.remove(p.character);
+                p.character = null;
+                p.status = "Vacío";
+                
+                buildPedestalsListUI();
+                selectPedestal(id);
+            }
+        }
+
+
+        // --- MANEJO DE VENTANA / REDIMENSIONAMIENTO ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- BUCLE DE ANIMACIÓN PRINCIPAL ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            // 1. Efecto de oleaje suave en el mar
+            const posAttr = oceanMesh.geometry.attributes.position;
+            const v = new THREE.Vector3();
+            for (let i = 0; i < posAttr.count; i++) {
+                v.fromBufferAttribute(posAttr, i);
+                
+                const wave1 = Math.sin(v.x * 0.15 + time * 1.2) * 0.25;
+                const wave2 = Math.cos(v.y * 0.15 + time * 1.0) * 0.25;
+                const wave3 = Math.sin((v.x + v.y) * 0.05 + time * 0.5) * 0.4;
+                
+                posAttr.setZ(i, wave1 + wave2 + wave3);
+            }
+            posAttr.needsUpdate = true;
+            oceanMesh.geometry.computeVertexNormals();
+
+            // 2. Movimiento del barco amarrado
+            if (shipGroup) {
+                shipGroup.position.y = 1.1 + Math.sin(time * 1.5) * 0.12;
+                shipGroup.rotation.z = Math.sin(time * 1.1) * 0.015;
+                shipGroup.rotation.x = Math.cos(time * 0.9) * 0.008;
+            }
+
+            // 3. Animación de los hologramas/estatuas por defecto (Rotación mágica lenta + Levitación)
+            const mixerDelta = mixerClock.getDelta(); // UNA sola lectura por frame
+            pedestals.forEach(p => {
+                if (p.character && p.status === "Holograma") {
+                    p.character.rotation.y = time * 0.5;
+                    p.character.position.y = 0.6 + Math.sin(time * 2 + p.id) * 0.1;
+                } else if (p.character && p.status === "Cargado") {
+                    p.character.rotation.y = time * 0.2;
+                }
+                if (p.mixer) p.mixer.update(mixerDelta);
+            });
+
+            // 4. Parpadeo místico en el haz de luz de las baldosas
+            pedestals.forEach(p => {
+                if (p.group) {
+                    const beam = p.group.children[3]; // El haz de luz cilíndrico
+                    if (beam) {
+                        beam.material.opacity = 0.06 + Math.sin(time * 3 + p.id) * 0.02;
+                    }
+                }
+            });
+
+            // 5. Parpadeo de antorchas
+            pointLights.forEach((light, idx) => {
+                if (light.intensity > 0) {
+                    const noise = Math.sin(time * 8 + idx * 10) * Math.cos(time * 15 + idx * 5) * 0.25;
+                    light.intensity = (currentPreset === 'night' ? 1.5 : 0.8) + noise;
+                }
+            });
+
+            // Actualizar controles de cámara
+            if (controls) controls.update();
+
+            // Renderizado de la escena
+            renderer.render(scene, camera);
+        }
+
+        // =====================================================
+        //  SISTEMA DE COMBATE POR TURNOS — COMPLETO
+        // =====================================================
+
+        // ── Estado global de combate ──
+        let activeHeroPedestalId = null;
+        let openSubmenu = null;
+
+        // Fase: 'hero' = turno del jugador, 'enemy' = turno IA
+        let combatPhase = 'hero';
+        let currentRound = 1;
+
+        // Sets de pedestales que ya actuaron esta ronda
+        let heroesActed  = new Set(); // ids de héroes que gastaron su turno
+        let enemiesActed = new Set(); // ids de enemigos que ya actuaron
+
+        // Selección de objetivo pendiente para habilidades individuales
+        let pendingSkill = null;   // { skill, attCd, attPedestal }
+        let selectingTarget = false;
+
+        // Provocación: si no es null, los enemigos DEBEN atacar a ese pedestalId
+        let tauntTargetId = null;   // pedestalId de Hércules mientras provoca
+        let tauntTurnsLeft = 0;
+
+        // Referencia al personaje esperando en escena (animación pausada)
+        let attackerChar   = null;
+        let attackerOrigin = null;
+        let attackerStage  = null;
+
+
+        // ── Definición de habilidades ──
+        const SKILLS = {
+            "Holograma 2": [ // JASÓN
+                {
+                    id: "jason_h1", name: "Estocada de Yolco",
+                    icon: "🗡️", iconBg: "#1e3a5f",
+                    type: "individual", cost: 0, supreme: false,
+                    desc: "Daño físico moderado a un enemigo.",
+                    mult: 1.0, guaranteedCrit: false, aoe: false
+                },
+                {
+                    id: "jason_h2", name: "¡Argonautas, a mí!",
+                    icon: "📣", iconBg: "#1a3a1a",
+                    type: "soporte_area", cost: 35, supreme: false,
+                    desc: "Aumenta ATK y DEF del equipo héroe en 20% durante 2 turnos.",
+                    aoe: true,
+                    effect: (src, pid) => {
+                        applyTeamBuff("heroes", {atk_mult:1.20, def_mult:1.20}, 2);
+                    }
+                },
+                {
+                    id: "jason_h3", name: "Tajo del Egeo",
+                    icon: "🌊", iconBg: "#0f2a40",
+                    type: "aoe", cost: 50, supreme: false,
+                    desc: "Daño físico al 70% de base a todos los enemigos.",
+                    mult: 0.7, guaranteedCrit: false, aoe: true
+                },
+                {
+                    id: "jason_h4", name: "Castigo de Hera",
+                    icon: "⚡", iconBg: "#3a2a00",
+                    type: "individual", cost: 85, supreme: true,
+                    desc: "Golpe demoledor. Daño ×2.5, crítico garantizado.",
+                    mult: 2.5, guaranteedCrit: true, aoe: false
+                }
+            ],
+            "Holograma 1": [ // HÉRCULES
+                {
+                    id: "herc_h1", name: "Golpe de Nemea",
+                    icon: "👊", iconBg: "#3a1a00",
+                    type: "individual", cost: 0, supreme: false,
+                    desc: "Daño físico base. 20% de prob. de Aturdimiento.",
+                    mult: 1.0, guaranteedCrit: false, aoe: false
+                },
+                {
+                    id: "herc_h2", name: "Provocación Olímpica",
+                    icon: "🔥", iconBg: "#3a0a0a",
+                    type: "soporte_self", cost: 30, supreme: false,
+                    desc: "Los enemigos solo atacan a Hércules 2 turnos. DEF +30% (2t).",
+                    aoe: true,
+                    effect: (src, pid) => {
+                        applyEffect(pid, {type:"def_up", def_mult:1.30, duration:2});
+                        tauntTargetId  = pid;
+                        tauntTurnsLeft = 2;
+                        showFeedback("🔥 ¡PROVOCACIÓN! Enemigos te atacan (2t) + DEF +30%", "#f59e0b");
+                    }
+                },
+                {
+                    id: "herc_h3", name: "Rompe-Armaduras",
+                    icon: "💥", iconBg: "#2a1a0a",
+                    type: "individual", cost: 45, supreme: false,
+                    desc: "Daño al 90% de base. Reduce DEF del objetivo 50% (2t).",
+                    mult: 0.9, guaranteedCrit: false, aoe: false
+                },
+                {
+                    id: "herc_h4", name: "Fuerza de los Dioses",
+                    icon: "🌩️", iconBg: "#1a0a3a",
+                    type: "aoe", cost: 90, supreme: true,
+                    desc: "Daño ×1.8 a TODOS los enemigos.",
+                    mult: 1.8, guaranteedCrit: false, aoe: true
+                }
+            ],
+            "Holograma 3": [ // ORFEO
+                {
+                    id: "orf_h1", name: "Himno de la Resistencia",
+                    icon: "🎵", iconBg: "#1a0a3a",
+                    type: "soporte_area", cost: 0, supreme: false,
+                    desc: "Cura 80 HP al equipo aliado.",
+                    aoe: true,
+                    effect: (src, pid) => {
+                        pedestals.forEach(p => {
+                            const cd = CHARACTER_DATA[p.name];
+                            if (!cd || cd.team !== "heroes" || cd.hp <= 0) return;
+                            cd.hp = Math.min(cd.maxHp, cd.hp + 80);
+                            updateBarSprite(p.id);
+                        });
+                        showFeedback("♪ +80 ❤ a todo el equipo", "#8040c0");
+                    }
+                },
+                {
+                    id: "orf_h2", name: "Lira de Orfeo",
+                    icon: "🎶", iconBg: "#2a1a4a",
+                    type: "soporte_area", cost: 40, supreme: false,
+                    desc: "Aumenta ATK del equipo en 30% durante 2 turnos.",
+                    aoe: true,
+                    effect: (src, pid) => {
+                        applyTeamBuff("heroes", {atk_mult:1.30}, 2);
+                    }
+                },
+                {
+                    id: "orf_h3", name: "Purificación",
+                    icon: "✨", iconBg: "#1a3a2a",
+                    type: "soporte_area", cost: 55, supreme: false,
+                    desc: "Elimina efectos negativos del equipo. Inmunidad 1 turno.",
+                    aoe: true,
+                    effect: (src, pid) => {
+                        const neg = ["aturdimiento","confusion","sangrado"];
+                        pedestals.forEach(p => {
+                            const cd = CHARACTER_DATA[p.name];
+                            if (!cd || cd.team !== "heroes") return;
+                            if (activeEffects[p.id])
+                                activeEffects[p.id] = activeEffects[p.id].filter(ef => !neg.includes(ef.type));
+                            applyEffect(p.id, {type:"inmunidad", duration:1});
+                        });
+                        showFeedback("✨ Equipo Purificado + Inmunidad (1t)", "#4ade80");
+                    }
+                },
+                {
+                    id: "orf_h4", name: "Melodía Suprema",
+                    icon: "🪗", iconBg: "#2a1a3a",
+                    type: "soporte_area", cost: 80, supreme: true,
+                    desc: "Regen +35 HP/turno al equipo durante 3 turnos.",
+                    aoe: true,
+                    effect: (src, pid) => {
+                        applyTeamBuff("heroes", {regen:35}, 3);
+                    }
+                }
+            ]
+        };
+
+        // ── Efectos activos (pedestalId → [efectos]) ──
+        const activeEffects = {};
+
+        // ── Habilidades básicas de guardias ──
+        const GUARD_SKILLS_LIST = [
+            { name:"Golpe de Lanza", mult:1.0, guaranteedCrit:false, type:"individual", cost:0 }
+        ];
+
+        // ================================================================
+        //  FÓRMULAS DE COMBATE
+        // ================================================================
+
+        function resolveAttack(atkCd, defCd, mult, guaranteedCrit, defMult) {
+            defMult = defMult || 1.0;
+            const hitChance = atkCd.precision - defCd.evasion;
+            if (Math.random() > hitChance)
+                return { hit:false, crit:false, damage:0, label:"💨 ¡Fallado!", color:"#94a3b8" };
+
+            const effectiveDef = defCd.def * defMult;
+            const baseDmg = Math.max(1, (atkCd.atk * mult) - (effectiveDef * 0.4));
+            const isCrit = guaranteedCrit || (Math.random() < atkCd.critChance);
+            const finalDmg = Math.round(isCrit ? baseDmg * atkCd.critMult : baseDmg);
+            const label = isCrit ? `💥 ¡CRÍTICO! −${finalDmg}` : `⚔️ −${finalDmg} daño`;
+            return { hit:true, crit:isCrit, damage:finalDmg, label, color: isCrit?"#fbbf24":"#f87171" };
+        }
+
+        function applyEffect(pedestalId, effect) {
+            if (!activeEffects[pedestalId]) activeEffects[pedestalId] = [];
+            activeEffects[pedestalId].push(effect);
+        }
+
+        function applyTeamBuff(team, mods, turns) {
+            pedestals.forEach(p => {
+                const cd = CHARACTER_DATA[p.name];
+                if (!cd || cd.team !== team || cd.hp <= 0) return;
+                if (!activeEffects[p.id]) activeEffects[p.id] = [];
+                activeEffects[p.id].push({...mods, duration:turns});
+            });
+            const parts = [];
+            if (mods.atk_mult) parts.push(`ATK ×${mods.atk_mult}`);
+            if (mods.def_mult) parts.push(`DEF ×${mods.def_mult}`);
+            if (mods.regen)    parts.push(`Regen +${mods.regen} HP/t`);
+            showFeedback(`✦ ${parts.join(" · ")} (${turns}t)`, "#4ade80");
+        }
+
+        function getEffectiveMultipliers(pedestalId) {
+            const effects = activeEffects[pedestalId] || [];
+            let atkMult=1.0, defMult=1.0;
+            effects.forEach(ef => {
+                if (ef.atk_mult) atkMult *= ef.atk_mult;
+                if (ef.def_mult) defMult *= ef.def_mult;
+            });
+            return { atkMult, defMult };
+        }
+
+        function processEffects(pedestalId) {
+            const effects = activeEffects[pedestalId];
+            if (!effects || !effects.length) return;
+            const cd = CHARACTER_DATA[pedestals[pedestalId].name];
+            if (!cd) return;
+            const toRemove = [];
+            effects.forEach((ef, i) => {
+                if (ef.regen)    cd.hp = Math.min(cd.maxHp, cd.hp + ef.regen);
+                if (ef.sangrado) cd.hp = Math.max(0, cd.hp - 25);
+                ef.duration--;
+                if (ef.duration <= 0) toRemove.push(i);
+            });
+            toRemove.reverse().forEach(i => effects.splice(i,1));
+        }
+
+        // ================================================================
+        //  MUERTE Y ESTADO DE PERSONAJES
+        // ================================================================
+
+        function killCharacter(pedestalId) {
+            const p = pedestals[pedestalId];
+            const cd = CHARACTER_DATA[p.name];
+            if (!cd) return;
+            cd.hp = 0;
+            // Ocultar modelo 3D
+            if (p.character) p.character.visible = false;
+            // Ocultar sprite de barras
+            const bs = barSprites[pedestalId];
+            if (bs) {
+                bs.canvas.width = 0; // vaciar
+                bs.tex.needsUpdate = true;
+                // Ocultar el sprite del grupo
+                p.group.children.forEach(c => { if (c.isSprite) c.visible = false; });
+            }
+            showFeedback(`💀 ${cd.charName} derrotado`, "#f87171", true);
+        }
+
+        function isAlive(pedestalId) {
+            const cd = CHARACTER_DATA[pedestals[pedestalId].name];
+            return cd && cd.hp > 0;
+        }
+
+        function getAliveHeroes() {
+            return pedestals.filter(p => {
+                const cd = CHARACTER_DATA[p.name];
+                return cd && cd.team === "heroes" && cd.hp > 0;
+            });
+        }
+
+        function getAliveEnemies() {
+            return pedestals.filter(p => {
+                const cd = CHARACTER_DATA[p.name];
+                return cd && cd.team === "guards" && cd.hp > 0;
+            });
+        }
+
+        // ================================================================
+        //  SISTEMA DE TURNO POR TURNO
+        // ================================================================
+
+        function updateRoundDisplay() {
+            const el = document.getElementById("round-display");
+            if (el) {
+                el.textContent = `Ronda ${currentRound}`;
+                // Indicar turno activo
+                const phaseEl = document.getElementById("round-phase");
+                if (phaseEl) phaseEl.textContent = combatPhase === "hero" ? "⚔ Tu turno" : "🛡 Turno enemigo";
+            }
+        }
+
+        // Llamar al inicio de cada turno de héroe para regenerar energía
+        function regenHeroEnergy(pedestalId) {
+            const cd = CHARACTER_DATA[pedestals[pedestalId].name];
+            if (!cd || cd.team !== "heroes" || cd.hp <= 0) return;
+            cd.energy = Math.min(cd.maxEnergy, cd.energy + cd.energyRegen);
+        }
+
+        // Marcar héroe como "ya actuó esta ronda"
+        function markHeroActed(pedestalId) {
+            heroesActed.add(pedestalId);
+            // Oscurecer visualmente el pedestal
+            const p = pedestals[pedestalId];
+            if (p && p.group) {
+                // Bajar opacidad del anillo
+                const ring = p.group.children[2]; // glowRing
+                if (ring) ring.material.opacity = 0.15;
+            }
+            hideActionPanel();
+            updateRoundHUD();
+
+            // Comprobar si todos los héroes vivos ya actuaron
+            const aliveHeroes = getAliveHeroes();
+            const allActed = aliveHeroes.every(p => heroesActed.has(p.id));
+            if (allActed) {
+                setTimeout(() => startEnemyPhase(), 700);
+            }
+        }
+
+        function restoreGlowRings() {
+            pedestals.forEach(p => {
+                if (p.group) {
+                    const ring = p.group.children[2];
+                    if (ring) ring.material.opacity = 0.6;
+                }
+            });
+        }
+
+        function updateRoundHUD() {
+            // Resaltar héroes que aún pueden actuar
+            const aliveHeroes = getAliveHeroes();
+            aliveHeroes.forEach(p => {
+                const pending = !heroesActed.has(p.id);
+                const ring = p.group && p.group.children[2];
+                if (ring) ring.material.opacity = pending ? 0.8 : 0.15;
+            });
+        }
+
+        // ── Fase enemiga ──
+        function startEnemyPhase() {
+            combatPhase = "enemy";
+            updateRoundDisplay();
+            showFeedback("⚔ Turno Enemigo", "#f87171");
+            enemiesActed.clear();
+
+            // Pequeño delay antes de que actúen los enemigos
+            setTimeout(() => runNextEnemyTurn(), 900);
+        }
+
+        function runNextEnemyTurn() {
+            const alive = getAliveEnemies().filter(p => !enemiesActed.has(p.id));
+            if (alive.length === 0) {
+                setTimeout(() => startHeroPhase(), 600);
+                return;
+            }
+
+            const enemyPedestal = alive[Math.floor(Math.random() * alive.length)];
+            const skill = GUARD_SKILLS_LIST[0];
+
+            // Respetar provocación: si tauntTargetId apunta a un héroe vivo, atacarlo siempre
+            let heroTargets = getAliveHeroes();
+            if (heroTargets.length === 0) {
+                setTimeout(() => showDefeat(), 500);
+                return;
+            }
+
+            let target;
+            if (tauntTargetId !== null && tauntTurnsLeft > 0) {
+                const taunter = heroTargets.find(p => p.id === tauntTargetId);
+                target = taunter || heroTargets[Math.floor(Math.random() * heroTargets.length)];
+            } else {
+                target = heroTargets[Math.floor(Math.random() * heroTargets.length)];
+            }
+
+            performCombatAction(enemyPedestal, target, skill, () => {
+                enemiesActed.add(enemyPedestal.id);
+                setTimeout(() => runNextEnemyTurn(), 1200);
+            });
+        }
+
+        function startHeroPhase() {
+            currentRound++;
+            combatPhase = "hero";
+            heroesActed.clear();
+            enemiesActed.clear();
+
+            // Decrementar provocación
+            if (tauntTargetId !== null) {
+                tauntTurnsLeft--;
+                if (tauntTurnsLeft <= 0) {
+                    tauntTargetId  = null;
+                    tauntTurnsLeft = 0;
+                }
+            }
+
+            // Procesar efectos y regen para todos los personajes
+            pedestals.forEach(p => {
+                if (!isAlive(p.id)) return;
+                processEffects(p.id);
+                const cd = CHARACTER_DATA[p.name];
+                if (cd && cd.team === "heroes") {
+                    cd.energy = Math.min(cd.maxEnergy, cd.energy + cd.energyRegen);
+                }
+                updateBarSprite(p.id);
+            });
+
+            restoreGlowRings();
+            updateRoundDisplay();
+            showFeedback(`🌅 Ronda ${currentRound} — Tu turno`, "#4ade80");
+
+            // Verificar si quedan enemigos
+            if (getAliveEnemies().length === 0) {
+                setTimeout(() => showVictory(), 500);
+                return;
+            }
+        }
+
+        // ================================================================
+        //  ANIMACIÓN DE COMBATE — performCombatAction
+        // ================================================================
+
+        function performCombatAction(attPedestal, defPedestal, skill, onDone) {
+            if (actionInProgress) return;
+            actionInProgress = true;
+
+            const stage = pedestals[ACTION_STAGE_ID];
+            const char  = attPedestal.character;
+            if (!char) { actionInProgress = false; if (onDone) onDone(); return; }
+
+            const originPos = new THREE.Vector3(...attPedestal.pos);
+            const stagePos  = new THREE.Vector3(...stage.pos);
+
+            // Sacar del grupo origen
+            attPedestal.group.localToWorld(char.position);
+            attPedestal.group.remove(char);
+            scene.add(char);
+
+            tweenMove(char.position, stagePos, 0.7, 5, () => {
+                // En escena: aplicar daño
+                scene.remove(char);
+                stage.group.add(char);
+                char.position.set(0, 0.65, 0);
+
+                // Aplicar habilidad
+                if (skill.type === "individual" || skill.type === "aoe") {
+                    const targets = skill.aoe ? getAliveEnemies().filter(p => CHARACTER_DATA[p.name] && CHARACTER_DATA[p.name].team !== CHARACTER_DATA[attPedestal.name].team)
+                                              : [defPedestal];
+                    // Para enemigos atacando héroes, ajustar targets
+                    const attCd = CHARACTER_DATA[attPedestal.name];
+                    const finalTargets = skill.aoe
+                        ? pedestals.filter(p => { const cd = CHARACTER_DATA[p.name]; return cd && cd.team !== attCd.team && cd.hp > 0; })
+                        : [defPedestal];
+
+                    finalTargets.forEach(tp => {
+                        const defCd = CHARACTER_DATA[tp.name];
+                        if (!defCd || defCd.hp <= 0) return;
+                        const { defMult } = getEffectiveMultipliers(tp.id);
+                        const { atkMult } = getEffectiveMultipliers(attPedestal.id);
+                        const modAtk = { ...attCd, atk: attCd.atk * atkMult };
+                        const result = resolveAttack(modAtk, defCd, skill.mult || 1.0, skill.guaranteedCrit || false, defMult);
+                        if (result.hit) {
+                            defCd.hp = Math.max(0, defCd.hp - result.damage);
+                            updateBarSprite(tp.id);
+                            if (tp.id === activeHeroPedestalId) selectPedestalRaw(tp.id);
+                        }
+                        showFeedback(result.label, result.color, result.crit);
+                        if (defCd.hp <= 0) killCharacter(tp.id);
+                    });
+                } else if (skill.effect) {
+                    skill.effect(CHARACTER_DATA[attPedestal.name], attPedestal.id);
+                }
+
+                // Volver al origen
+                setTimeout(() => {
+                    stage.group.localToWorld(char.position);
+                    stage.group.remove(char);
+                    scene.add(char);
+
+                    tweenMove(char.position, originPos, 0.7, 5, () => {
+                        scene.remove(char);
+                        attPedestal.group.add(char);
+                        char.position.set(0, 0.65, 0);
+                        actionInProgress = false;
+                        if (onDone) onDone();
+                    });
+                }, 900);
+            });
+        }
+
+        // ================================================================
+        //  SELECCIÓN DE OBJETIVO PARA HABILIDADES INDIVIDUALES
+        // ================================================================
+
+        function enterTargetSelectMode(skill, attCd, attPedestal) {
+            selectingTarget = true;
+            pendingSkill = { skill, attCd, attPedestal };
+            showFeedback("🎯 Elige un objetivo enemigo", "#fcd34d");
+            // Resaltar enemigos
+            getAliveEnemies().forEach(p => {
+                const ring = p.group && p.group.children[2];
+                if (ring) { ring.material.color.setHex(0xff2020); ring.material.opacity = 1.0; }
+            });
+            hideActionPanel();
+        }
+
+        function cancelTargetSelect() {
+            selectingTarget = false;
+            pendingSkill = null;
+            restoreGlowRings();
+            pedestals.forEach(p => {
+                const ring = p.group && p.group.children[2];
+                if (ring) ring.material.color.setHex(
+                    p.type==="right" ? 0xec4899 : p.type==="center" ? 0xf59e0b : 0x00ffff
+                );
+            });
+        }
+
+        function confirmTargetAndAttack(targetPedestalId) {
+            if (!pendingSkill) return;
+            const { skill, attCd, attPedestal } = pendingSkill;
+            const targetPedestal = pedestals[targetPedestalId];
+            cancelTargetSelect();
+
+            // Descontar energía
+            if (skill.cost > 0) {
+                attCd.energy = Math.max(0, attCd.energy - skill.cost);
+                updateBarSprite(attPedestal.id);
+            }
+
+            performCombatAction(attPedestal, targetPedestal, skill, () => {
+                markHeroActed(attPedestal.id);
+                selectPedestalRaw(attPedestal.id);
+            });
+        }
+
+        // ================================================================
+        //  PANEL DE ACCIÓN
+        // ================================================================
+
+        function showActionPanel(pedestalId) {
+            const p = pedestals[pedestalId];
+            const cd = CHARACTER_DATA[p.name];
+            if (!cd || cd.team !== "heroes" || cd.hp <= 0) { hideActionPanel(); return; }
+            // Solo si es turno del jugador y el héroe no ha actuado
+            if (combatPhase !== "hero" || heroesActed.has(pedestalId)) { hideActionPanel(); return; }
+            activeHeroPedestalId = pedestalId;
+            openSubmenu = null;
+
+            document.getElementById("action-panel").classList.add("visible");
+            document.getElementById("action-submenu").classList.remove("visible");
+            document.querySelectorAll(".act-btn").forEach(b => b.classList.remove("active"));
+        }
+
+        function hideActionPanel() {
+            document.getElementById("action-panel").classList.remove("visible");
+            document.getElementById("action-submenu").classList.remove("visible");
+            openSubmenu = null;
+            activeHeroPedestalId = null;
+        }
+
+        function toggleSubmenu(type) {
+            const sub = document.getElementById("action-submenu");
+            const content = document.getElementById("submenu-content");
+            const title   = document.getElementById("submenu-title");
+
+            if (openSubmenu === type) {
+                sub.classList.remove("visible");
+                openSubmenu = null;
+                document.querySelectorAll(".act-btn").forEach(b => b.classList.remove("active"));
+                return;
+            }
+
+            openSubmenu = type;
+            document.querySelectorAll(".act-btn").forEach(b => b.classList.remove("active"));
+            if (type === "skills") document.querySelector(".skills-btn").classList.add("active");
+            if (type === "items")  document.querySelector(".items-btn").classList.add("active");
+
+            if (type === "skills") {
+                title.textContent = "⚔️  Habilidades";
+                renderSkillsMenu(content);
+            } else {
+                title.textContent = "🎒  Ítems";
+                content.innerHTML = `<div class="items-empty">— Inventario vacío —<br><span style="font-size:0.6rem;color:#1e293b">Los ítems se obtendrán durante la aventura</span></div>`;
+            }
+            sub.classList.add("visible");
+        }
+
+        function renderSkillsMenu(container) {
+            if (activeHeroPedestalId === null) return;
+            const p  = pedestals[activeHeroPedestalId];
+            const cd = CHARACTER_DATA[p.name];
+            const skills = SKILLS[p.name] || [];
+
+            container.innerHTML = "";
+            const grid = document.createElement("div");
+            grid.className = "skills-grid";
+
+            skills.forEach((sk, idx) => {
+                const hasEnergy = cd.energy >= sk.cost;
+                const btn = document.createElement("div");
+                btn.className = "skill-btn" + (sk.supreme?" supreme":"") + (!hasEnergy?" no-energy":"");
+
+                // Preview de daño para habilidades de ataque
+                let previewLine = "";
+                if (sk.mult !== undefined) {
+                    const genericDef = { def:30, evasion:0.08 };
+                    const baseDmg = Math.max(1, (cd.atk * sk.mult) - (genericDef.def * 0.4));
+                    const critDmg = Math.round(baseDmg * cd.critMult);
+                    const normalDmg = Math.round(baseDmg);
+                    const hitPct = Math.round((cd.precision - genericDef.evasion) * 100);
+                    previewLine = `<span style="color:#f87171">⚔ ${normalDmg}</span>`
+                                + `  <span style="color:#fbbf24">💥 ${critDmg} (${Math.round(cd.critChance*100)}%)</span>`
+                                + `  <span style="color:#64748b">Acierto ${hitPct}%</span>`;
+                }
+
+                btn.innerHTML = `
+                    <div class="skill-icon" style="background:${sk.iconBg};">${sk.icon}</div>
+                    <div class="skill-name">H${idx+1} ${sk.name}</div>
+                    <div class="skill-cost ${sk.cost===0?'free':''}">${sk.cost===0?'Gratis':'⚡ '+sk.cost}</div>
+                    <div class="skill-type-badge">${sk.type}</div>
+                    <div class="skill-tooltip">
+                        <b>${sk.name}</b>${sk.desc}
+                        ${previewLine?`<div style="margin-top:7px;border-top:1px solid rgba(255,255,255,0.1);padding-top:6px;line-height:1.8;">${previewLine}</div>`:""}
+                        ${!hasEnergy?`<div style="color:#f87171;margin-top:5px;">Sin energía (${cd.energy}/${sk.cost})</div>`:""}
+                    </div>
+                `;
+
+                if (hasEnergy) {
+                    btn.onclick = () => executeSkill(sk, cd, p);
+                }
+                grid.appendChild(btn);
+            });
+            container.appendChild(grid);
+        }
+
+        function executeSkill(skill, cd, pedestal) {
+            document.getElementById("action-submenu").classList.remove("visible");
+            openSubmenu = null;
+            document.querySelectorAll(".act-btn").forEach(b => b.classList.remove("active"));
+
+            // Habilidades de área o soporte: ejecutar directamente
+            if (skill.type === "aoe" || skill.type === "soporte_area" || skill.type === "soporte_self") {
+                if (skill.cost > 0) {
+                    cd.energy = Math.max(0, cd.energy - skill.cost);
+                    updateBarSprite(pedestal.id);
+                }
+                if (skill.effect) {
+                    skill.effect(cd, pedestal.id);
+                } else if (skill.type === "aoe") {
+                    // Daño de área: animar al escenario y dañar a todos los enemigos
+                    performCombatAction(pedestal, null, skill, () => {
+                        markHeroActed(pedestal.id);
+                        selectPedestalRaw(pedestal.id);
+                    });
+                    return;
+                }
+                markHeroActed(pedestal.id);
+                selectPedestalRaw(pedestal.id);
+                return;
+            }
+
+            // Habilidad individual: entrar en modo selección de objetivo
+            enterTargetSelectMode(skill, cd, pedestal);
+        }
+
+        function doDefend() {
+            if (activeHeroPedestalId === null) return;
+            const p = pedestals[activeHeroPedestalId];
+            const cd = CHARACTER_DATA[p.name];
+            if (!cd) return;
+
+            // DEF ×1.5 este turno + regen doble de energía
+            applyEffect(p.id, {type:"def_up", def_mult:1.50, duration:1});
+            cd.energy = Math.min(cd.maxEnergy, cd.energy + cd.energyRegen * 2);
+            updateBarSprite(p.id);
+            showFeedback(`🛡️ ${cd.charName} se defiende — DEF ×1.5`, "#4ade80");
+
+            document.getElementById("action-submenu").classList.remove("visible");
+            openSubmenu = null;
+            document.querySelectorAll(".act-btn").forEach(b => b.classList.remove("active"));
+
+            markHeroActed(p.id);
+            selectPedestalRaw(p.id);
+        }
+
+        // ================================================================
+        //  FEEDBACK VISUAL
+        // ================================================================
+
+        function showFeedback(text, color, big) {
+            const el = document.getElementById("action-feedback");
+            el.textContent = text;
+            el.style.color  = color || "#fcd34d";
+            el.style.fontSize = big ? "2rem" : "1.4rem";
+            el.classList.add("show");
+            setTimeout(() => el.classList.remove("show"), 2000);
+        }
+
+        // ================================================================
+        //  ACTUALIZAR BARRAS FLOTANTES
+        // ================================================================
+
+        function updateBarSprite(pedestalId) {
+            const bs = barSprites[pedestalId];
+            if (!bs) return;
+            bs.draw();
+            bs.tex.needsUpdate = true;
+        }
+
+        // ================================================================
+        //  INTEGRACIÓN CON selectPedestal (sobrescritura)
+        // ================================================================
+
+        // Versión interna sin lógica de combate (para llamadas internas)
+        function selectPedestalRaw(id) {
+            selectedPedestalId = id;
+            const p  = pedestals[id];
+            const cd = CHARACTER_DATA[p.name];
+
+            // HUD lateral
+            const hud = document.getElementById("hud-panel");
+            if (cd && hud) {
+                hud.classList.add("visible");
+                const teamColors = { heroes:"#60a0f0", guards:"#f06060" };
+                document.getElementById("hud-name").textContent     = cd.charName;
+                document.getElementById("hud-name").style.color     = teamColors[cd.team] || "#fff";
+                const hpPct = (cd.hp / cd.maxHp * 100).toFixed(0);
+                document.getElementById("hud-hp-fill").style.width  = hpPct + "%";
+                document.getElementById("hud-hp-val").textContent   = `${cd.hp} / ${cd.maxHp}`;
+                const energyBlock = document.getElementById("hud-energy-block");
+                if (energyBlock) energyBlock.style.display = cd.maxEnergy > 0 ? "" : "none";
+                if (cd.maxEnergy > 0) {
+                    const enPct = (cd.energy / cd.maxEnergy * 100).toFixed(0);
+                    document.getElementById("hud-en-fill").style.width = enPct + "%";
+                    document.getElementById("hud-en-val").textContent  = `${cd.energy} / ${cd.maxEnergy}`;
+                }
+                const statsExtra = document.getElementById("hud-stats-extra");
+                if (statsExtra) statsExtra.textContent = `ATK ${cd.atk}  •  DEF ${cd.def}  •  EVA ${Math.round(cd.evasion*100)}%`;
+                document.getElementById("hud-role").textContent = `Rol: ${cd.role}  •  Equipo: ${cd.team}`;
+            }
+
+            // Enfocar cámara
+            if (controls) {
+                controls.target.set(p.pos[0], p.pos[1]+2, p.pos[2]);
+                controls.update();
+            }
+        }
+
+        // Sobrescribir selectPedestal existente para incluir lógica de combate
+        const _origSelectPedestal = selectPedestal;
+        selectPedestal = function(id) {
+            // Si estamos en modo selección de objetivo
+            if (selectingTarget) {
+                const p  = pedestals[id];
+                const cd = CHARACTER_DATA[p.name];
+                // Solo aceptar enemigos vivos como objetivo
+                if (cd && cd.team === "guards" && cd.hp > 0) {
+                    confirmTargetAndAttack(id);
+                } else {
+                    showFeedback("Selecciona un enemigo válido", "#f87171");
+                }
+                return;
+            }
+
+            _origSelectPedestal(id);
+            showActionPanel(id);
+        };
+
+        // ── Crear HUD de ronda en el UI overlay ──
+        (function createRoundHUD() {
+            const header = document.getElementById("ui-header");
+            if (!header) return;
+            const roundBox = document.createElement("div");
+            roundBox.className = "glass";
+            roundBox.style.cssText = "padding:8px 18px;margin-right:12px;display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;";
+            roundBox.innerHTML = `
+                <div id="round-display" style="font-size:0.85rem;font-weight:700;color:#fcd34d;letter-spacing:0.1em;">Ronda 1</div>
+                <div id="round-phase"   style="font-size:0.65rem;color:#4ade80;letter-spacing:0.08em;">⚔ Tu turno</div>
+            `;
+            header.insertBefore(roundBox, header.firstChild);
+        })();
+
+        // ================================================================
+        //  MONEDAS — calcular recompensa
+        // ================================================================
+
+        function calcReward(skipped) {
+            if (skipped) {
+                // Saltar batalla: recompensa reducida (50–70%)
+                const base = Math.floor(Math.random() * 40) + 60; // 60–99
+                return Math.floor(base * 0.6);
+            }
+            // Victoria normal: basada en rondas (menos rondas = más monedas)
+            const base = 120;
+            const bonus = Math.max(0, (8 - currentRound) * 8);
+            return base + bonus + Math.floor(Math.random() * 30);
+        }
+
+        // ================================================================
+        //  PANTALLAS DE RESULTADO
+        // ================================================================
+
+        function lockBattle() {
+            // Congelar toda interacción de combate
+            combatPhase = "ended";
+            hideActionPanel();
+        }
+
+        function showVictory(skipped) {
+            lockBattle();
+            const coins = calcReward(skipped);
+            const overlay = document.getElementById("result-overlay");
+            const box     = document.getElementById("result-box");
+
+            box.innerHTML = `
+                <div style="font-size:3.5rem;margin-bottom:4px;">🏆</div>
+                <div style="font-size:1.8rem;font-weight:900;letter-spacing:0.12em;color:#fcd34d;text-transform:uppercase;margin-bottom:6px;">
+                    ${skipped ? "Batalla Saltada" : "¡Victoria!"}
+                </div>
+                <div style="font-size:0.85rem;color:#94a3b8;margin-bottom:20px;">
+                    ${skipped ? "Recibiste una recompensa reducida por saltar." : `Completada en ${currentRound} ronda${currentRound !== 1 ? "s" : ""}.`}
+                </div>
+                <div style="display:flex;align-items:center;justify-content:center;gap:10px;
+                            background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);
+                            border-radius:14px;padding:14px 28px;margin-bottom:28px;">
+                    <span style="font-size:2rem;">🪙</span>
+                    <div>
+                        <div style="font-size:2rem;font-weight:900;color:#fcd34d;line-height:1;">${coins}</div>
+                        <div style="font-size:0.65rem;color:#94a3b8;letter-spacing:0.1em;text-transform:uppercase;">Monedas de Plata</div>
+                    </div>
+                </div>
+                <button onclick="document.getElementById('result-overlay').style.display='none'"
+                    style="background:linear-gradient(135deg,rgba(245,158,11,0.3),rgba(245,158,11,0.15));
+                           border:1px solid rgba(245,158,11,0.6);color:#fcd34d;
+                           font-size:0.85rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
+                           padding:12px 36px;border-radius:50px;cursor:pointer;
+                           backdrop-filter:blur(10px);transition:all 0.2s;"
+                    onmouseover="this.style.boxShadow='0 0 24px rgba(245,158,11,0.5)'"
+                    onmouseout="this.style.boxShadow='none'">
+                    Continuar →
+                </button>
+                <div style="margin-top:16px;">
+                    <button onclick="document.getElementById('result-overlay').style.display='none'"
+                        style="background:transparent;border:none;color:#475569;font-size:0.7rem;
+                               cursor:pointer;letter-spacing:0.08em;text-transform:uppercase;">
+                        Menú Principal
+                    </button>
+                </div>
+            `;
+            overlay.style.display = "flex";
+        }
+
+        function showDefeat() {
+            lockBattle();
+            const overlay = document.getElementById("result-overlay");
+            const box     = document.getElementById("result-box");
+
+            box.innerHTML = `
+                <div style="font-size:3.5rem;margin-bottom:4px;">💀</div>
+                <div style="font-size:1.8rem;font-weight:900;letter-spacing:0.12em;color:#f87171;text-transform:uppercase;margin-bottom:6px;">
+                    Derrota
+                </div>
+                <div style="font-size:0.85rem;color:#94a3b8;margin-bottom:28px;">
+                    Tu equipo ha caído en la batalla.
+                </div>
+                <button onclick="location.reload()"
+                    style="background:linear-gradient(135deg,rgba(248,113,113,0.25),rgba(248,113,113,0.1));
+                           border:1px solid rgba(248,113,113,0.5);color:#fca5a5;
+                           font-size:0.85rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
+                           padding:12px 36px;border-radius:50px;cursor:pointer;
+                           backdrop-filter:blur(10px);margin-bottom:12px;transition:all 0.2s;display:block;width:100%;"
+                    onmouseover="this.style.boxShadow='0 0 24px rgba(248,113,113,0.4)'"
+                    onmouseout="this.style.boxShadow='none'">
+                    🔄 Reintentar
+                </button>
+                <button onclick="document.getElementById('result-overlay').style.display='none'"
+                    style="background:transparent;border:1px solid rgba(255,255,255,0.1);color:#475569;
+                           font-size:0.75rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;
+                           padding:10px 28px;border-radius:50px;cursor:pointer;display:block;width:100%;">
+                    Menú Principal
+                </button>
+            `;
+            overlay.style.display = "flex";
+        }
+
+        // ================================================================
+        //  SALTAR BATALLA
+        // ================================================================
+
+        function skipBattlePrompt() {
+            document.getElementById("skip-confirm").style.display = "flex";
+        }
+
+        function skipBattleConfirm(yes) {
+            document.getElementById("skip-confirm").style.display = "none";
+            if (yes) showVictory(true);
+        }
+
+        // ── Inyectar DOM: overlay resultado + diálogo saltar + botón ──
+        (function injectBattleUI() {
+
+            // Overlay de resultado (victoria / derrota)
+            const overlay = document.createElement("div");
+            overlay.id = "result-overlay";
+            overlay.style.cssText = `
+                display:none;position:fixed;inset:0;z-index:200;
+                align-items:center;justify-content:center;
+                background:rgba(2,6,23,0.88);backdrop-filter:blur(8px);
+            `;
+            overlay.innerHTML = `<div id="result-box" style="
+                background:rgba(10,18,36,0.97);
+                border:1px solid rgba(255,255,255,0.1);
+                border-radius:24px;padding:40px 48px;
+                text-align:center;max-width:380px;width:90%;
+                box-shadow:0 0 60px rgba(0,0,0,0.8);
+                font-family:'Segoe UI',sans-serif;color:#f1f5f9;
+            "></div>`;
+            document.body.appendChild(overlay);
+
+            // Diálogo de confirmación "saltar batalla"
+            const skipDlg = document.createElement("div");
+            skipDlg.id = "skip-confirm";
+            skipDlg.style.cssText = `
+                display:none;position:fixed;inset:0;z-index:210;
+                align-items:center;justify-content:center;
+                background:rgba(2,6,23,0.80);backdrop-filter:blur(6px);
+            `;
+            skipDlg.innerHTML = `
+                <div style="background:rgba(10,18,36,0.98);border:1px solid rgba(255,255,255,0.12);
+                            border-radius:20px;padding:32px 40px;text-align:center;max-width:340px;width:90%;
+                            font-family:'Segoe UI',sans-serif;color:#f1f5f9;box-shadow:0 0 50px rgba(0,0,0,0.7);">
+                    <div style="font-size:2rem;margin-bottom:10px;">⚡</div>
+                    <div style="font-size:1.1rem;font-weight:800;letter-spacing:0.08em;color:#fcd34d;
+                                text-transform:uppercase;margin-bottom:8px;">¿Saltar Batalla?</div>
+                    <div style="font-size:0.8rem;color:#94a3b8;margin-bottom:24px;line-height:1.6;">
+                        Recibirás una recompensa reducida<br>en monedas de plata.
+                    </div>
+                    <div style="display:flex;gap:12px;justify-content:center;">
+                        <button onclick="skipBattleConfirm(true)"
+                            style="background:linear-gradient(135deg,rgba(245,158,11,0.3),rgba(245,158,11,0.12));
+                                   border:1px solid rgba(245,158,11,0.5);color:#fcd34d;
+                                   font-size:0.8rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
+                                   padding:10px 28px;border-radius:50px;cursor:pointer;transition:all 0.2s;"
+                            onmouseover="this.style.boxShadow='0 0 18px rgba(245,158,11,0.4)'"
+                            onmouseout="this.style.boxShadow='none'">
+                            Sí, saltar
+                        </button>
+                        <button onclick="skipBattleConfirm(false)"
+                            style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:#94a3b8;
+                                   font-size:0.8rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;
+                                   padding:10px 28px;border-radius:50px;cursor:pointer;transition:all 0.2s;"
+                            onmouseover="this.style.style='border-color:rgba(255,255,255,0.35)'"
+                            onmouseout="">
+                            No, continuar
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(skipDlg);
+
+            // Botón "Saltar Batalla" — arriba a la izquierda
+            const skipBtn = document.createElement("button");
+            skipBtn.textContent = "⚡ Saltar Batalla";
+            skipBtn.onclick = skipBattlePrompt;
+            skipBtn.style.cssText = `
+                position:fixed;top:20px;left:20px;z-index:30;
+                background:rgba(10,18,36,0.8);backdrop-filter:blur(10px);
+                border:1px solid rgba(255,255,255,0.12);color:#94a3b8;
+                font-size:0.72rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
+                padding:8px 18px;border-radius:50px;cursor:pointer;
+                transition:all 0.2s;pointer-events:auto;
+            `;
+            skipBtn.onmouseover = () => { skipBtn.style.borderColor="rgba(245,158,11,0.5)"; skipBtn.style.color="#fcd34d"; };
+            skipBtn.onmouseout  = () => { skipBtn.style.borderColor="rgba(255,255,255,0.12)"; skipBtn.style.color="#94a3b8"; };
+            document.body.appendChild(skipBtn);
+        })();
+
+    </script>
+</body>
+</html>
